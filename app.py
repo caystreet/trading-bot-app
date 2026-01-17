@@ -17,8 +17,8 @@ st.set_page_config(
 )
 
 # Title
-st.title("🤖 Crypto Trading Bot Tester")
-st.markdown("Machine Learning-powered trading signal generator for cryptocurrency")
+st.title("🤖 Trading Bot Tester")
+st.markdown("Machine Learning-powered trading signal generator for stocks and crypto")
 
 # Sidebar for configuration
 st.sidebar.header("⚙️ Configuration")
@@ -40,20 +40,20 @@ with st.sidebar.expander("🔑 API Keys", expanded=True):
 with st.sidebar.expander("📊 Trading Parameters", expanded=True):
     target_asset = st.selectbox(
         "Target Asset",
-        ["BTCUSD", "ETHUSD", "SOLUSD"],
+        ["BTCUSD", "ETHUSD", "SOLUSD", "SPY", "GLD", "QQQ", "IWM"],
         index=0
     )
 
     market_context = st.multiselect(
         "Market Context",
-        ["MSTR", "SPY", "IEA", "TLT"],
-        default=["MSTR", "SPY", "IEA", "TLT"]
+        ["MSTR", "SPY", "GLD", "QQQ", "IWM", "IEA", "TLT", "VIX"],
+        default=["MSTR", "SPY", "GLD", "QQQ"]
     )
 
     macro_context = st.multiselect(
         "Macro Context (FRED)",
-        ["FEDFUNDS", "CPIAUCSL", "DGS10"],
-        default=["FEDFUNDS", "CPIAUCSL"]
+        ["FEDFUNDS", "CPIAUCSL", "PCE", "PCEPI", "DGS10", "UNRATE", "M2SL"],
+        default=["FEDFUNDS", "CPIAUCSL", "PCE"]
     )
 
 # Model selection
