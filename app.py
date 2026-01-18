@@ -56,6 +56,23 @@ with st.sidebar.expander("📊 Trading Parameters", expanded=True):
         default=["FEDFUNDS", "CPIAUCSL", "PCE"]
     )
 
+# Technical Indicators
+with st.sidebar.expander("📈 Technical Indicators", expanded=True):
+    st.markdown("**Simple Moving Averages**")
+    use_sma_10 = st.checkbox("10-day SMA", value=True)
+    use_sma_50 = st.checkbox("50-day SMA", value=True)
+    use_sma_100 = st.checkbox("100-day SMA", value=False)
+    use_sma_200 = st.checkbox("200-day SMA", value=False)
+
+    st.markdown("**Momentum Indicators**")
+    use_mom_14 = st.checkbox("14-day Momentum", value=True)
+    use_mom_30 = st.checkbox("30-day Momentum", value=True)
+    use_mom_60 = st.checkbox("60-day Momentum", value=False)
+
+    st.markdown("**Smoothed Momentum**")
+    use_smoothed_10 = st.checkbox("10-day Smoothed Mom", value=True)
+    use_smoothed_30 = st.checkbox("30-day Smoothed Mom", value=True)
+
 # Model selection
 with st.sidebar.expander("🧠 Model Selection", expanded=True):
     use_rf = st.checkbox("Random Forest", value=True)
@@ -97,15 +114,31 @@ def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, ma
         st.error(f"Error fetching data: {str(e)}")
         return None
 
-def build_lab_features(df, target):
+def build_lab_features(df, target, indicator_config):
     """Build features and labels for training"""
-    # Momentum
-    df['Mom_30'] = (df[target] - df[target].shift(30)) / df[target].shift(30)
-    df['Mom_14'] = (df[target] - df[target].shift(14)) / df[target].shift(14)
+    # Simple Moving Averages
+    if indicator_config.get('use_sma_10'):
+        df['SMA_10'] = df[target].rolling(window=10).mean()
+    if indicator_config.get('use_sma_50'):
+        df['SMA_50'] = df[target].rolling(window=50).mean()
+    if indicator_config.get('use_sma_100'):
+        df['SMA_100'] = df[target].rolling(window=100).mean()
+    if indicator_config.get('use_sma_200'):
+        df['SMA_200'] = df[target].rolling(window=200).mean()
 
-    # Smoothing
-    df['Smoothed_30'] = df['Mom_30'].rolling(window=30).mean()
-    df['Smoothed_10'] = df['Mom_30'].rolling(window=10).mean()
+    # Momentum Indicators
+    if indicator_config.get('use_mom_14'):
+        df['Mom_14'] = (df[target] - df[target].shift(14)) / df[target].shift(14)
+    if indicator_config.get('use_mom_30'):
+        df['Mom_30'] = (df[target] - df[target].shift(30)) / df[target].shift(30)
+    if indicator_config.get('use_mom_60'):
+        df['Mom_60'] = (df[target] - df[target].shift(60)) / df[target].shift(60)
+
+    # Smoothed Momentum
+    if indicator_config.get('use_smoothed_10') and 'Mom_30' in df.columns:
+        df['Smoothed_10'] = df['Mom_30'].rolling(window=10).mean()
+    if indicator_config.get('use_smoothed_30') and 'Mom_30' in df.columns:
+        df['Smoothed_30'] = df['Mom_30'].rolling(window=30).mean()
 
     # Define Label: 1 if 8.5% TP hit within 40 candles
     df['Signal'] = (df[target].shift(-40) > df[target] * 1.085).astype(int)
@@ -169,13 +202,32 @@ def run_backtest(df, preds, target):
         "30d": last_30d
     }
 
-def get_live_prediction(model, df, target):
+def get_live_prediction(model, df, target, indicator_config):
     """Get live prediction from the model"""
-    # Apply feature engineering
-    df['Mom_30'] = (df[target] - df[target].shift(30)) / df[target].shift(30)
-    df['Mom_14'] = (df[target] - df[target].shift(14)) / df[target].shift(14)
-    df['Smoothed_30'] = df['Mom_30'].rolling(window=30).mean()
-    df['Smoothed_10'] = df['Mom_30'].rolling(window=10).mean()
+    # Apply feature engineering (same as build_lab_features but without Signal)
+    # Simple Moving Averages
+    if indicator_config.get('use_sma_10'):
+        df['SMA_10'] = df[target].rolling(window=10).mean()
+    if indicator_config.get('use_sma_50'):
+        df['SMA_50'] = df[target].rolling(window=50).mean()
+    if indicator_config.get('use_sma_100'):
+        df['SMA_100'] = df[target].rolling(window=100).mean()
+    if indicator_config.get('use_sma_200'):
+        df['SMA_200'] = df[target].rolling(window=200).mean()
+
+    # Momentum Indicators
+    if indicator_config.get('use_mom_14'):
+        df['Mom_14'] = (df[target] - df[target].shift(14)) / df[target].shift(14)
+    if indicator_config.get('use_mom_30'):
+        df['Mom_30'] = (df[target] - df[target].shift(30)) / df[target].shift(30)
+    if indicator_config.get('use_mom_60'):
+        df['Mom_60'] = (df[target] - df[target].shift(60)) / df[target].shift(60)
+
+    # Smoothed Momentum
+    if indicator_config.get('use_smoothed_10') and 'Mom_30' in df.columns:
+        df['Smoothed_10'] = df['Mom_30'].rolling(window=10).mean()
+    if indicator_config.get('use_smoothed_30') and 'Mom_30' in df.columns:
+        df['Smoothed_30'] = df['Mom_30'].rolling(window=30).mean()
 
     df_features = df.dropna()
     last_row = df_features.iloc[[-1]]
@@ -202,6 +254,19 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
     if not tiingo_key or not fred_key:
         st.error("Please provide both API keys")
     else:
+        # Create indicator configuration
+        indicator_config = {
+            'use_sma_10': use_sma_10,
+            'use_sma_50': use_sma_50,
+            'use_sma_100': use_sma_100,
+            'use_sma_200': use_sma_200,
+            'use_mom_14': use_mom_14,
+            'use_mom_30': use_mom_30,
+            'use_mom_60': use_mom_60,
+            'use_smoothed_10': use_smoothed_10,
+            'use_smoothed_30': use_smoothed_30
+        }
+
         with st.spinner("Fetching data..."):
             raw_data = get_consolidated_data(
                 tiingo_key, fred_key, target_asset,
@@ -210,7 +275,7 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
 
         if raw_data is not None:
             with st.spinner("Building features..."):
-                processed_data = build_lab_features(raw_data.copy(), target_asset)
+                processed_data = build_lab_features(raw_data.copy(), target_asset, indicator_config)
 
                 X = processed_data.drop(columns=['Signal'])
                 y = processed_data['Signal']
@@ -234,7 +299,7 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                             )
                             rf_model.fit(X, y)
 
-                            rf_pred = get_live_prediction(rf_model, raw_data.copy(), target_asset)
+                            rf_pred = get_live_prediction(rf_model, raw_data.copy(), target_asset, indicator_config)
 
                         st.subheader("🌲 Random Forest Model")
                         st.metric("Current Price", f"${rf_pred['price']:,.2f}")
@@ -254,7 +319,7 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                             knn_model = KNeighborsClassifier(n_neighbors=n_neighbors)
                             knn_model.fit(X, y)
 
-                            knn_pred = get_live_prediction(knn_model, raw_data.copy(), target_asset)
+                            knn_pred = get_live_prediction(knn_model, raw_data.copy(), target_asset, indicator_config)
 
                         st.subheader("🔵 K-Nearest Neighbors Model")
                         st.metric("Current Price", f"${knn_pred['price']:,.2f}")
