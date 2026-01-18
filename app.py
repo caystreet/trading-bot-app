@@ -44,6 +44,23 @@ with st.sidebar.expander("📊 Trading Parameters", expanded=True):
         index=0
     )
 
+    st.markdown("**Date Range**")
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input(
+            "Start Date",
+            value=pd.to_datetime("2018-01-01"),
+            min_value=pd.to_datetime("2015-01-01"),
+            max_value=pd.to_datetime("today")
+        )
+    with col2:
+        end_date = st.date_input(
+            "End Date",
+            value=pd.to_datetime("today"),
+            min_value=pd.to_datetime("2015-01-01"),
+            max_value=pd.to_datetime("today")
+        )
+
     market_context = st.multiselect(
         "Market Context",
         ["MSTR", "SPY", "GLD", "QQQ", "IWM", "IEA", "TLT", "VIX"],
@@ -87,7 +104,7 @@ with st.sidebar.expander("🧠 Model Selection", expanded=True):
 
 # --- DATA FUNCTIONS ---
 @st.cache_data(ttl=3600)
-def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, macro_context):
+def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, macro_context, start_date, end_date):
     """Fetch and consolidate market and macro data"""
     try:
         client = TiingoClient({'api_key': tiingo_key})
@@ -95,7 +112,12 @@ def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, ma
 
         # Fetch all market symbols
         all_market = [target_asset] + market_context
-        df_market = client.get_dataframe(all_market, metric_name='close', startDate='2018-01-01')
+        df_market = client.get_dataframe(
+            all_market,
+            metric_name='close',
+            startDate=start_date.strftime('%Y-%m-%d'),
+            endDate=end_date.strftime('%Y-%m-%d')
+        )
 
         # Fetch economic data from FRED
         df_econ = pd.DataFrame({s: fred.get_series(s) for s in macro_context})
@@ -178,7 +200,11 @@ def run_backtest(df, preds, target):
         trades_index.append(idx)
 
     results_series = pd.Series(trades, index=trades_index)
+    df_start_date = df.index[0]
     df_end_date = df.index[-1]
+
+    # Get last signal date
+    last_signal_date = results_series.index[-1] if len(results_series) > 0 else None
 
     # Calculate metrics for different periods
     overall = calculate_metrics(results_series)
@@ -199,7 +225,10 @@ def run_backtest(df, preds, target):
         "overall": overall,
         "90d": last_90d,
         "60d": last_60d,
-        "30d": last_30d
+        "30d": last_30d,
+        "start_date": df_start_date.strftime('%Y-%m-%d'),
+        "end_date": df_end_date.strftime('%Y-%m-%d'),
+        "last_signal_date": last_signal_date.strftime('%Y-%m-%d') if last_signal_date else "No signals"
     }
 
 def get_live_prediction(model, df, target, indicator_config):
@@ -270,7 +299,7 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
         with st.spinner("Fetching data..."):
             raw_data = get_consolidated_data(
                 tiingo_key, fred_key, target_asset,
-                market_context, macro_context
+                market_context, macro_context, start_date, end_date
             )
 
         if raw_data is not None:
@@ -341,6 +370,10 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                         rf_results = run_backtest(processed_data, rf_model.predict(X), target_asset)
 
                     st.subheader("🌲 Random Forest Backtest")
+
+                    # Date range info
+                    st.info(f"📅 **Backtest Period:** {rf_results['start_date']} to {rf_results['end_date']} | 📍 **Last Signal:** {rf_results['last_signal_date']}")
+
                     col1, col2, col3, col4 = st.columns(4)
 
                     with col1:
@@ -366,6 +399,10 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                         knn_results = run_backtest(processed_data, knn_model.predict(X), target_asset)
 
                     st.subheader("🔵 K-Nearest Neighbors Backtest")
+
+                    # Date range info
+                    st.info(f"📅 **Backtest Period:** {knn_results['start_date']} to {knn_results['end_date']} | 📍 **Last Signal:** {knn_results['last_signal_date']}")
+
                     col1, col2, col3, col4 = st.columns(4)
 
                     with col1:
