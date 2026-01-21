@@ -739,35 +739,35 @@ else:
             if st.button("🔍 Scan", key=f"sidebar_scan_{idx}"):
                 st.info("Go to 'Deploy Bot' tab to scan")
 
-    # Export/Import bots
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("💾 Save/Load Bots")
+# Export/Import bots (always visible)
+st.sidebar.markdown("---")
+st.sidebar.subheader("💾 Save/Load Bots")
 
-    col1, col2 = st.sidebar.columns(2)
+col1, col2 = st.sidebar.columns(2)
 
-    with col1:
-        if len(st.session_state.deployed_bots) > 0:
-            bot_data = export_all_bots()
-            st.download_button(
-                label="💾 Export",
-                data=bot_data,
-                file_name=f"bots_backup_{datetime.now().strftime('%Y%m%d')}.pkl",
-                mime="application/octet-stream",
-                use_container_width=True,
-                help="Save your bots to reload later"
-            )
+with col1:
+    if len(st.session_state.deployed_bots) > 0:
+        bot_data = export_all_bots()
+        st.download_button(
+            label="💾 Export",
+            data=bot_data,
+            file_name=f"bots_backup_{datetime.now().strftime('%Y%m%d')}.pkl",
+            mime="application/octet-stream",
+            use_container_width=True,
+            help="Save your bots to reload later"
+        )
+    else:
+        st.button("💾 Export", disabled=True, use_container_width=True, help="No bots to export")
+
+with col2:
+    uploaded_file = st.file_uploader("Import", type=['pkl'], label_visibility="collapsed", key="bot_import")
+    if uploaded_file is not None:
+        success, result = import_bots(uploaded_file)
+        if success:
+            st.success(f"✅ Loaded {result} bot(s)")
+            st.rerun()
         else:
-            st.button("💾 Export", disabled=True, use_container_width=True, help="No bots to export")
-
-    with col2:
-        uploaded_file = st.file_uploader("Import", type=['pkl'], label_visibility="collapsed", key="bot_import")
-        if uploaded_file is not None:
-            success, result = import_bots(uploaded_file)
-            if success:
-                st.success(f"✅ Loaded {result} bot(s)")
-                st.rerun()
-            else:
-                st.error(f"❌ Import failed: {result}")
+            st.error(f"❌ Import failed: {result}")
 
 # Footer
 st.sidebar.markdown("---")
