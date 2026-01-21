@@ -587,34 +587,78 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
 
                         bot_name = st.text_input("Bot Name", value=f"{target_asset}_bot_{datetime.now().strftime('%Y%m%d')}")
 
-                        # In-App Deployment
-                        if st.button("🚀 Deploy Bot In-App", type="primary", use_container_width=True):
-                            # Use models from session state (they persist across reruns)
-                            if use_rf and 'rf_model' in st.session_state:
-                                model_to_use = st.session_state.rf_model
-                            elif use_knn and 'knn_model' in st.session_state:
-                                model_to_use = st.session_state.knn_model
-                            else:
-                                st.error("Model not found. Please run analysis first.")
-                                st.stop()
+                        # In-App Deployment - Show separate buttons if both models trained
+                        if use_rf and use_knn and 'rf_model' in st.session_state and 'knn_model' in st.session_state:
+                            st.write("**Deploy which model?**")
+                            col_rf, col_knn = st.columns(2)
 
-                            # Store bot in session state with trained model
-                            deployed_bot = {
-                                "name": bot_name,
-                                "config": bot_config,
-                                "model": model_to_use,
-                                "model_type": "Random Forest" if use_rf else "KNN",
-                                "deployed_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                "status": "active",
-                                "last_scan": None,
-                                "last_signal": None
-                            }
+                            with col_rf:
+                                if st.button("🌲 Deploy RF", use_container_width=True):
+                                    deployed_bot = {
+                                        "name": f"{bot_name}_RF",
+                                        "config": bot_config.copy(),
+                                        "model": st.session_state.rf_model,
+                                        "model_type": "Random Forest",
+                                        "deployed_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                        "status": "active",
+                                        "last_scan": None,
+                                        "last_signal": None
+                                    }
+                                    deployed_bot["config"]["model_type"] = "Random Forest"
+                                    st.session_state.deployed_bots.append(deployed_bot)
+                                    st.success(f"✅ RF Bot deployed!")
 
-                            st.session_state.deployed_bots.append(deployed_bot)
-                            st.success(f"✅ Bot '{bot_name}' deployed successfully!")
-                            st.info("👉 Check sidebar 'Active Bots' section")
-                            # Don't rerun - let user see success message
-                            # st.rerun()
+                            with col_knn:
+                                if st.button("🔵 Deploy KNN", use_container_width=True):
+                                    deployed_bot = {
+                                        "name": f"{bot_name}_KNN",
+                                        "config": bot_config.copy(),
+                                        "model": st.session_state.knn_model,
+                                        "model_type": "KNN",
+                                        "deployed_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                        "status": "active",
+                                        "last_scan": None,
+                                        "last_signal": None
+                                    }
+                                    deployed_bot["config"]["model_type"] = "KNN"
+                                    st.session_state.deployed_bots.append(deployed_bot)
+                                    st.success(f"✅ KNN Bot deployed!")
+
+                        # Single model deployment
+                        elif use_rf and 'rf_model' in st.session_state:
+                            if st.button("🚀 Deploy RF Bot In-App", type="primary", use_container_width=True):
+                                deployed_bot = {
+                                    "name": bot_name,
+                                    "config": bot_config.copy(),
+                                    "model": st.session_state.rf_model,
+                                    "model_type": "Random Forest",
+                                    "deployed_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                    "status": "active",
+                                    "last_scan": None,
+                                    "last_signal": None
+                                }
+                                st.session_state.deployed_bots.append(deployed_bot)
+                                st.success(f"✅ Bot '{bot_name}' deployed!")
+
+                        elif use_knn and 'knn_model' in st.session_state:
+                            if st.button("🚀 Deploy KNN Bot In-App", type="primary", use_container_width=True):
+                                deployed_bot = {
+                                    "name": bot_name,
+                                    "config": bot_config.copy(),
+                                    "model": st.session_state.knn_model,
+                                    "model_type": "KNN",
+                                    "deployed_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                    "status": "active",
+                                    "last_scan": None,
+                                    "last_signal": None
+                                }
+                                st.session_state.deployed_bots.append(deployed_bot)
+                                st.success(f"✅ Bot '{bot_name}' deployed!")
+
+                        else:
+                            st.warning("⚠️ Please run analysis first to train models")
+
+                        st.info("👉 Check sidebar 'Active Bots' section")
 
                         st.markdown("---")
 
