@@ -687,6 +687,31 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                 st.markdown("---")
                 st.warning("⚠️ **Disclaimer:** Automated trading carries significant risk. Always review signals manually before trading.")
 
+# Active Bots Quick Access
+st.sidebar.markdown("---")
+st.sidebar.header("🤖 Active Bots")
+
+if len(st.session_state.deployed_bots) == 0:
+    st.sidebar.info("No active bots")
+else:
+    st.sidebar.metric("Active Bots", len(st.session_state.deployed_bots))
+
+    # Show recent alerts
+    if st.session_state.bot_alerts:
+        recent_buy_alerts = [a for a in st.session_state.bot_alerts if a['signal'] == 'BUY'][-3:]
+        if recent_buy_alerts:
+            st.sidebar.success(f"🔔 {len(recent_buy_alerts)} recent BUY signal(s)")
+
+    # Quick view of each bot
+    for idx, bot in enumerate(st.session_state.deployed_bots):
+        with st.sidebar.expander(f"🤖 {bot['name']}", expanded=False):
+            st.write(f"**Asset:** {bot['config']['target_asset']}")
+            st.write(f"**Status:** {bot['status'].upper()}")
+            st.write(f"**Last Signal:** {bot['last_signal'] or 'None'}")
+
+            if st.button("🔍 Scan", key=f"sidebar_scan_{idx}"):
+                st.info("Go to 'Deploy Bot' tab to scan")
+
 # Footer
 st.sidebar.markdown("---")
 st.sidebar.markdown("Built with ❤️ using Streamlit")
