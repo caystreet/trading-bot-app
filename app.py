@@ -414,6 +414,9 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                             )
                             rf_model.fit(X, y)
 
+                            # Store in session state for bot deployment
+                            st.session_state.rf_model = rf_model
+
                             rf_pred = get_live_prediction(rf_model, raw_data.copy(), target_asset, indicator_config)
 
                         st.subheader("🌲 Random Forest Model")
@@ -433,6 +436,9 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                         with st.spinner("Training K-Nearest Neighbors..."):
                             knn_model = KNeighborsClassifier(n_neighbors=n_neighbors)
                             knn_model.fit(X, y)
+
+                            # Store in session state for bot deployment
+                            st.session_state.knn_model = knn_model
 
                             knn_pred = get_live_prediction(knn_model, raw_data.copy(), target_asset, indicator_config)
 
@@ -454,6 +460,8 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                 if use_rf:
                     with st.spinner("Running Random Forest backtest..."):
                         rf_results = run_backtest(processed_data, rf_model.predict(X), target_asset)
+                        # Store in session state
+                        st.session_state.rf_results = rf_results
 
                     st.subheader("🌲 Random Forest Backtest")
 
@@ -581,11 +589,20 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
 
                         # In-App Deployment
                         if st.button("🚀 Deploy Bot In-App", type="primary", use_container_width=True):
+                            # Use models from session state (they persist across reruns)
+                            if use_rf and 'rf_model' in st.session_state:
+                                model_to_use = st.session_state.rf_model
+                            elif use_knn and 'knn_model' in st.session_state:
+                                model_to_use = st.session_state.knn_model
+                            else:
+                                st.error("Model not found. Please run analysis first.")
+                                st.stop()
+
                             # Store bot in session state with trained model
                             deployed_bot = {
                                 "name": bot_name,
                                 "config": bot_config,
-                                "model": rf_model if use_rf else knn_model,
+                                "model": model_to_use,
                                 "model_type": "Random Forest" if use_rf else "KNN",
                                 "deployed_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                 "status": "active",
@@ -595,8 +612,9 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
 
                             st.session_state.deployed_bots.append(deployed_bot)
                             st.success(f"✅ Bot '{bot_name}' deployed successfully!")
-                            st.info("👉 Go to 'Active Bots' tab to manage and scan")
-                            st.rerun()
+                            st.info("👉 Check sidebar 'Active Bots' section")
+                            # Don't rerun - let user see success message
+                            # st.rerun()
 
                         st.markdown("---")
 
