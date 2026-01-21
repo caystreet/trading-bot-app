@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 import warnings
 import json
 import pickle
-from datetime import datetime
+from datetime import datetime, timedelta
+import os
 warnings.filterwarnings('ignore')
 
 # Page configuration
@@ -19,11 +20,62 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize session state for deployed bots
+# Bot persistence functions
+BOTS_DIR = "deployed_bots"
+ALERTS_FILE = "bot_alerts.json"
+
+def ensure_bots_directory():
+    """Create bots directory if it doesn't exist"""
+    if not os.path.exists(BOTS_DIR):
+        os.makedirs(BOTS_DIR)
+
+def save_bot(bot):
+    """Save a bot to disk"""
+    ensure_bots_directory()
+    bot_file = os.path.join(BOTS_DIR, f"{bot['name']}.pkl")
+    with open(bot_file, 'wb') as f:
+        pickle.dump(bot, f)
+
+def load_all_bots():
+    """Load all bots from disk"""
+    ensure_bots_directory()
+    bots = []
+    if os.path.exists(BOTS_DIR):
+        for filename in os.listdir(BOTS_DIR):
+            if filename.endswith('.pkl'):
+                try:
+                    with open(os.path.join(BOTS_DIR, filename), 'rb') as f:
+                        bots.append(pickle.load(f))
+                except Exception as e:
+                    st.sidebar.warning(f"Could not load bot {filename}: {str(e)}")
+    return bots
+
+def delete_bot(bot_name):
+    """Delete a bot from disk"""
+    bot_file = os.path.join(BOTS_DIR, f"{bot_name}.pkl")
+    if os.path.exists(bot_file):
+        os.remove(bot_file)
+
+def save_alerts(alerts):
+    """Save alerts to disk"""
+    with open(ALERTS_FILE, 'w') as f:
+        json.dump(alerts, f)
+
+def load_alerts():
+    """Load alerts from disk"""
+    if os.path.exists(ALERTS_FILE):
+        try:
+            with open(ALERTS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+# Initialize session state for deployed bots with persistence
 if 'deployed_bots' not in st.session_state:
-    st.session_state.deployed_bots = []
+    st.session_state.deployed_bots = load_all_bots()
 if 'bot_alerts' not in st.session_state:
-    st.session_state.bot_alerts = []
+    st.session_state.bot_alerts = load_alerts()
 
 # Title
 st.title("🤖 Trading Bot Tester")
@@ -566,6 +618,9 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                 "last_signal": None
                             }
 
+                            # Save to disk for persistence
+                            save_bot(deployed_bot)
+
                             st.session_state.deployed_bots.append(deployed_bot)
                             st.success(f"✅ Bot '{bot_name}' deployed successfully!")
                             st.info("👉 Go to 'Active Bots' tab to manage and scan")
@@ -645,6 +700,9 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                                 bot['last_scan'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                                 bot['last_signal'] = signal
 
+                                                # Save updated bot to disk
+                                                save_bot(bot)
+
                                                 # If BUY signal, add to alerts
                                                 if signal == "BUY":
                                                     alert = {
@@ -654,6 +712,8 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                                         "asset": bot['config']['target_asset']
                                                     }
                                                     st.session_state.bot_alerts.append(alert)
+                                                    # Save alerts to disk
+                                                    save_alerts(st.session_state.bot_alerts)
 
                                                 st.success(f"Scan complete! Signal: **{signal}**")
                                                 st.rerun()
@@ -671,15 +731,18 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                     if bot['status'] == 'active':
                                         if st.button("⏸️ Pause", key=f"pause_{idx}", use_container_width=True):
                                             bot['status'] = 'paused'
+                                            save_bot(bot)  # Persist status change
                                             st.rerun()
                                     else:
                                         if st.button("▶️ Resume", key=f"resume_{idx}", use_container_width=True):
                                             bot['status'] = 'active'
+                                            save_bot(bot)  # Persist status change
                                             st.rerun()
 
                                 with col2:
                                     # Delete button
                                     if st.button("🗑️ Delete", key=f"delete_{idx}", use_container_width=True):
+                                        delete_bot(bot['name'])  # Delete from disk
                                         st.session_state.deployed_bots.pop(idx)
                                         st.success(f"Bot '{bot['name']}' deleted")
                                         st.rerun()
