@@ -53,6 +53,9 @@ def import_bots(uploaded_file):
 st.title("🤖 Trading Bot Tester")
 st.markdown("Machine Learning-powered trading signal generator for stocks and crypto")
 
+# Debug: Show app version to verify deployment
+st.sidebar.caption("App version: 2.0.1 (Bot Persistence)")
+
 # Sidebar for configuration
 st.sidebar.header("⚙️ Configuration")
 
