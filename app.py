@@ -29,6 +29,8 @@ if 'deployed_bots' not in st.session_state:
     st.session_state.deployed_bots = []
 if 'bot_alerts' not in st.session_state:
     st.session_state.bot_alerts = []
+if 'analysis_complete' not in st.session_state:
+    st.session_state.analysis_complete = False
 
 def export_all_bots():
     """Export all bots as a downloadable file"""
@@ -363,6 +365,9 @@ def get_live_prediction(model, df, target, indicator_config):
 
 # --- MAIN APP ---
 if st.sidebar.button("🚀 Run Analysis", type="primary"):
+    st.session_state.run_analysis_clicked = True
+
+if st.session_state.get('run_analysis_clicked', False):
     if not tiingo_key or not fred_key:
         st.error("Please provide both API keys")
     else:
