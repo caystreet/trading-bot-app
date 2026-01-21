@@ -20,62 +20,34 @@ st.set_page_config(
     layout="wide"
 )
 
-# Bot persistence functions
-BOTS_DIR = "deployed_bots"
-ALERTS_FILE = "bot_alerts.json"
+# Bot persistence - NOTE: Streamlit Cloud has ephemeral filesystem
+# Bots persist during the session but will be cleared on app restart
+# Users can export/import bot collections for long-term storage
 
-def ensure_bots_directory():
-    """Create bots directory if it doesn't exist"""
-    if not os.path.exists(BOTS_DIR):
-        os.makedirs(BOTS_DIR)
-
-def save_bot(bot):
-    """Save a bot to disk"""
-    ensure_bots_directory()
-    bot_file = os.path.join(BOTS_DIR, f"{bot['name']}.pkl")
-    with open(bot_file, 'wb') as f:
-        pickle.dump(bot, f)
-
-def load_all_bots():
-    """Load all bots from disk"""
-    ensure_bots_directory()
-    bots = []
-    if os.path.exists(BOTS_DIR):
-        for filename in os.listdir(BOTS_DIR):
-            if filename.endswith('.pkl'):
-                try:
-                    with open(os.path.join(BOTS_DIR, filename), 'rb') as f:
-                        bots.append(pickle.load(f))
-                except Exception as e:
-                    st.sidebar.warning(f"Could not load bot {filename}: {str(e)}")
-    return bots
-
-def delete_bot(bot_name):
-    """Delete a bot from disk"""
-    bot_file = os.path.join(BOTS_DIR, f"{bot_name}.pkl")
-    if os.path.exists(bot_file):
-        os.remove(bot_file)
-
-def save_alerts(alerts):
-    """Save alerts to disk"""
-    with open(ALERTS_FILE, 'w') as f:
-        json.dump(alerts, f)
-
-def load_alerts():
-    """Load alerts from disk"""
-    if os.path.exists(ALERTS_FILE):
-        try:
-            with open(ALERTS_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            return []
-    return []
-
-# Initialize session state for deployed bots with persistence
+# Initialize session state for deployed bots
 if 'deployed_bots' not in st.session_state:
-    st.session_state.deployed_bots = load_all_bots()
+    st.session_state.deployed_bots = []
 if 'bot_alerts' not in st.session_state:
-    st.session_state.bot_alerts = load_alerts()
+    st.session_state.bot_alerts = []
+
+def export_all_bots():
+    """Export all bots as a downloadable file"""
+    export_data = {
+        'bots': st.session_state.deployed_bots,
+        'alerts': st.session_state.bot_alerts,
+        'exported_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    return pickle.dumps(export_data)
+
+def import_bots(uploaded_file):
+    """Import bots from uploaded file"""
+    try:
+        import_data = pickle.loads(uploaded_file.read())
+        st.session_state.deployed_bots = import_data.get('bots', [])
+        st.session_state.bot_alerts = import_data.get('alerts', [])
+        return True, len(import_data.get('bots', []))
+    except Exception as e:
+        return False, str(e)
 
 # Title
 st.title("🤖 Trading Bot Tester")
@@ -618,9 +590,6 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                 "last_signal": None
                             }
 
-                            # Save to disk for persistence
-                            save_bot(deployed_bot)
-
                             st.session_state.deployed_bots.append(deployed_bot)
                             st.success(f"✅ Bot '{bot_name}' deployed successfully!")
                             st.info("👉 Go to 'Active Bots' tab to manage and scan")
@@ -700,9 +669,6 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                                 bot['last_scan'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                                 bot['last_signal'] = signal
 
-                                                # Save updated bot to disk
-                                                save_bot(bot)
-
                                                 # If BUY signal, add to alerts
                                                 if signal == "BUY":
                                                     alert = {
@@ -712,8 +678,6 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                                         "asset": bot['config']['target_asset']
                                                     }
                                                     st.session_state.bot_alerts.append(alert)
-                                                    # Save alerts to disk
-                                                    save_alerts(st.session_state.bot_alerts)
 
                                                 st.success(f"Scan complete! Signal: **{signal}**")
                                                 st.rerun()
@@ -731,18 +695,15 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                     if bot['status'] == 'active':
                                         if st.button("⏸️ Pause", key=f"pause_{idx}", use_container_width=True):
                                             bot['status'] = 'paused'
-                                            save_bot(bot)  # Persist status change
                                             st.rerun()
                                     else:
                                         if st.button("▶️ Resume", key=f"resume_{idx}", use_container_width=True):
                                             bot['status'] = 'active'
-                                            save_bot(bot)  # Persist status change
                                             st.rerun()
 
                                 with col2:
                                     # Delete button
                                     if st.button("🗑️ Delete", key=f"delete_{idx}", use_container_width=True):
-                                        delete_bot(bot['name'])  # Delete from disk
                                         st.session_state.deployed_bots.pop(idx)
                                         st.success(f"Bot '{bot['name']}' deleted")
                                         st.rerun()
@@ -774,6 +735,36 @@ else:
 
             if st.button("🔍 Scan", key=f"sidebar_scan_{idx}"):
                 st.info("Go to 'Deploy Bot' tab to scan")
+
+    # Export/Import bots
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("💾 Save/Load Bots")
+
+    col1, col2 = st.sidebar.columns(2)
+
+    with col1:
+        if len(st.session_state.deployed_bots) > 0:
+            bot_data = export_all_bots()
+            st.download_button(
+                label="💾 Export",
+                data=bot_data,
+                file_name=f"bots_backup_{datetime.now().strftime('%Y%m%d')}.pkl",
+                mime="application/octet-stream",
+                use_container_width=True,
+                help="Save your bots to reload later"
+            )
+        else:
+            st.button("💾 Export", disabled=True, use_container_width=True, help="No bots to export")
+
+    with col2:
+        uploaded_file = st.file_uploader("Import", type=['pkl'], label_visibility="collapsed", key="bot_import")
+        if uploaded_file is not None:
+            success, result = import_bots(uploaded_file)
+            if success:
+                st.success(f"✅ Loaded {result} bot(s)")
+                st.rerun()
+            else:
+                st.error(f"❌ Import failed: {result}")
 
 # Footer
 st.sidebar.markdown("---")
