@@ -7,6 +7,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 import matplotlib.pyplot as plt
 import warnings
+import json
+import pickle
+from datetime import datetime
 warnings.filterwarnings('ignore')
 
 # Page configuration
@@ -90,6 +93,11 @@ with st.sidebar.expander("📈 Technical Indicators", expanded=True):
     use_smoothed_10 = st.checkbox("10-day Smoothed Mom", value=True)
     use_smoothed_30 = st.checkbox("30-day Smoothed Mom", value=True)
 
+    st.markdown("**Volume Indicators**")
+    use_volume = st.checkbox("Volume", value=True)
+    use_volume_sma = st.checkbox("Volume SMA (20-day)", value=True)
+    use_volume_ratio = st.checkbox("Volume Ratio (vs 20d avg)", value=True)
+
 # Model selection
 with st.sidebar.expander("🧠 Model Selection", expanded=True):
     use_rf = st.checkbox("Random Forest", value=True)
@@ -110,7 +118,7 @@ def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, ma
         client = TiingoClient({'api_key': tiingo_key})
         fred = Fred(api_key=fred_key)
 
-        # Fetch all market symbols
+        # Fetch all market symbols (close prices)
         all_market = [target_asset] + market_context
         df_market = client.get_dataframe(
             all_market,
@@ -118,6 +126,20 @@ def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, ma
             startDate=start_date.strftime('%Y-%m-%d'),
             endDate=end_date.strftime('%Y-%m-%d')
         )
+
+        # Fetch volume data for target asset
+        try:
+            df_volume = client.get_dataframe(
+                [target_asset],
+                metric_name='volume',
+                startDate=start_date.strftime('%Y-%m-%d'),
+                endDate=end_date.strftime('%Y-%m-%d')
+            )
+            df_volume.columns = [f"{target_asset}_volume"]
+            df_market = df_market.join(df_volume)
+        except:
+            # If volume data not available, create a dummy column
+            df_market[f"{target_asset}_volume"] = 0
 
         # Fetch economic data from FRED
         df_econ = pd.DataFrame({s: fred.get_series(s) for s in macro_context})
@@ -161,6 +183,17 @@ def build_lab_features(df, target, indicator_config):
         df['Smoothed_10'] = df['Mom_30'].rolling(window=10).mean()
     if indicator_config.get('use_smoothed_30') and 'Mom_30' in df.columns:
         df['Smoothed_30'] = df['Mom_30'].rolling(window=30).mean()
+
+    # Volume Indicators
+    volume_col = f"{target}_volume"
+    if volume_col in df.columns:
+        if indicator_config.get('use_volume'):
+            df['Volume'] = df[volume_col]
+        if indicator_config.get('use_volume_sma'):
+            df['Volume_SMA_20'] = df[volume_col].rolling(window=20).mean()
+        if indicator_config.get('use_volume_ratio'):
+            volume_avg = df[volume_col].rolling(window=20).mean()
+            df['Volume_Ratio'] = df[volume_col] / volume_avg
 
     # Define Label: 1 if 8.5% TP hit within 40 candles
     df['Signal'] = (df[target].shift(-40) > df[target] * 1.085).astype(int)
@@ -221,6 +254,11 @@ def run_backtest(df, preds, target):
     results_30d = results_series[results_series.index >= thirty_days_ago]
     last_30d = calculate_metrics(results_30d)
 
+    # Calculate trades per month
+    total_days = (df_end_date - df_start_date).days
+    total_months = total_days / 30.44  # Average days per month
+    trades_per_month = round(len(results_series) / total_months, 2) if total_months > 0 else 0
+
     return {
         "overall": overall,
         "90d": last_90d,
@@ -228,7 +266,8 @@ def run_backtest(df, preds, target):
         "30d": last_30d,
         "start_date": df_start_date.strftime('%Y-%m-%d'),
         "end_date": df_end_date.strftime('%Y-%m-%d'),
-        "last_signal_date": last_signal_date.strftime('%Y-%m-%d') if last_signal_date else "No signals"
+        "last_signal_date": last_signal_date.strftime('%Y-%m-%d') if last_signal_date else "No signals",
+        "trades_per_month": trades_per_month
     }
 
 def get_live_prediction(model, df, target, indicator_config):
@@ -257,6 +296,17 @@ def get_live_prediction(model, df, target, indicator_config):
         df['Smoothed_10'] = df['Mom_30'].rolling(window=10).mean()
     if indicator_config.get('use_smoothed_30') and 'Mom_30' in df.columns:
         df['Smoothed_30'] = df['Mom_30'].rolling(window=30).mean()
+
+    # Volume Indicators
+    volume_col = f"{target}_volume"
+    if volume_col in df.columns:
+        if indicator_config.get('use_volume'):
+            df['Volume'] = df[volume_col]
+        if indicator_config.get('use_volume_sma'):
+            df['Volume_SMA_20'] = df[volume_col].rolling(window=20).mean()
+        if indicator_config.get('use_volume_ratio'):
+            volume_avg = df[volume_col].rolling(window=20).mean()
+            df['Volume_Ratio'] = df[volume_col] / volume_avg
 
     df_features = df.dropna()
     last_row = df_features.iloc[[-1]]
@@ -293,7 +343,10 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
             'use_mom_30': use_mom_30,
             'use_mom_60': use_mom_60,
             'use_smoothed_10': use_smoothed_10,
-            'use_smoothed_30': use_smoothed_30
+            'use_smoothed_30': use_smoothed_30,
+            'use_volume': use_volume,
+            'use_volume_sma': use_volume_sma,
+            'use_volume_ratio': use_volume_ratio
         }
 
         with st.spinner("Fetching data..."):
@@ -310,7 +363,7 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                 y = processed_data['Signal']
 
             # Create tabs for different views
-            tab1, tab2, tab3 = st.tabs(["📊 Live Signal", "📈 Backtest Results", "📉 Data Visualization"])
+            tab1, tab2, tab3, tab4 = st.tabs(["📊 Live Signal", "📈 Backtest Results", "📉 Data Visualization", "🤖 Deploy Bot"])
 
             with tab1:
                 st.header("🤖 Live Trading Signals")
@@ -372,7 +425,7 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                     st.subheader("🌲 Random Forest Backtest")
 
                     # Date range info
-                    st.info(f"📅 **Backtest Period:** {rf_results['start_date']} to {rf_results['end_date']} | 📍 **Last Signal:** {rf_results['last_signal_date']}")
+                    st.info(f"📅 **Backtest Period:** {rf_results['start_date']} to {rf_results['end_date']} | 📍 **Last Signal:** {rf_results['last_signal_date']} | 📊 **Avg Trades/Month:** {rf_results['trades_per_month']}")
 
                     col1, col2, col3, col4 = st.columns(4)
 
@@ -401,7 +454,7 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                     st.subheader("🔵 K-Nearest Neighbors Backtest")
 
                     # Date range info
-                    st.info(f"📅 **Backtest Period:** {knn_results['start_date']} to {knn_results['end_date']} | 📍 **Last Signal:** {knn_results['last_signal_date']}")
+                    st.info(f"📅 **Backtest Period:** {knn_results['start_date']} to {knn_results['end_date']} | 📍 **Last Signal:** {knn_results['last_signal_date']} | 📊 **Avg Trades/Month:** {knn_results['trades_per_month']}")
 
                     col1, col2, col3, col4 = st.columns(4)
 
@@ -446,6 +499,85 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                 # Show raw data
                 with st.expander("📊 View Raw Data"):
                     st.dataframe(raw_data.tail(50))
+
+            with tab4:
+                st.header("🤖 Deploy & Save Bot Configuration")
+
+                st.markdown("""
+                Save your current bot configuration to deploy it for daily scanning.
+                The bot will use the trained model and selected indicators to generate signals.
+                """)
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.subheader("📋 Current Configuration")
+                    bot_config = {
+                        "target_asset": target_asset,
+                        "start_date": start_date.strftime('%Y-%m-%d'),
+                        "end_date": end_date.strftime('%Y-%m-%d'),
+                        "market_context": market_context,
+                        "macro_context": macro_context,
+                        "indicators": indicator_config,
+                        "model_type": "Random Forest" if use_rf else "K-Nearest Neighbors",
+                        "model_params": {
+                            "n_estimators": n_estimators if use_rf else None,
+                            "max_depth": max_depth if use_rf else None,
+                            "n_neighbors": n_neighbors if use_knn else None
+                        },
+                        "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+
+                    st.json(bot_config)
+
+                    # Bot performance summary
+                    st.subheader("📊 Bot Performance")
+                    if use_rf:
+                        st.metric("Win Rate", f"{rf_results['overall']['win_rate']}%")
+                        st.metric("Total Signals", rf_results['overall']['total'])
+                        st.metric("Trades/Month", rf_results['trades_per_month'])
+
+                with col2:
+                    st.subheader("💾 Save Configuration")
+
+                    bot_name = st.text_input("Bot Name", value=f"{target_asset}_bot_{datetime.now().strftime('%Y%m%d')}")
+
+                    if st.button("💾 Save Bot Configuration", type="primary"):
+                        # Save configuration as JSON
+                        config_json = json.dumps(bot_config, indent=2)
+
+                        st.download_button(
+                            label="📥 Download Bot Config (JSON)",
+                            data=config_json,
+                            file_name=f"{bot_name}_config.json",
+                            mime="application/json"
+                        )
+
+                        st.success(f"✅ Bot configuration '{bot_name}' ready for download!")
+
+                    st.markdown("---")
+                    st.subheader("📅 Daily Scanning Setup")
+                    st.info("""
+                    **To enable daily scanning:**
+
+                    1. Download the bot configuration above
+                    2. Use the config file with a scheduled task or cron job
+                    3. The bot will scan daily and alert on BUY signals
+
+                    **Example Python script for daily scanning:**
+                    ```python
+                    # Load config and run daily scan
+                    import json
+                    with open('bot_config.json', 'r') as f:
+                        config = json.load(f)
+
+                    # Your scanning logic here
+                    # Send alerts via email/SMS when signal detected
+                    ```
+                    """)
+
+                    st.markdown("---")
+                    st.warning("⚠️ **Disclaimer:** Automated trading carries significant risk. Always review signals manually before trading.")
 
 # Footer
 st.sidebar.markdown("---")
