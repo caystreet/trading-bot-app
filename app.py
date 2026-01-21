@@ -606,7 +606,8 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                     }
                                     deployed_bot["config"]["model_type"] = "Random Forest"
                                     st.session_state.deployed_bots.append(deployed_bot)
-                                    st.success(f"✅ RF Bot deployed!")
+                                    st.success(f"✅ RF Bot deployed! Total bots: {len(st.session_state.deployed_bots)}")
+                                    st.info("👉 Check sidebar for bot")
 
                             with col_knn:
                                 if st.button("🔵 Deploy KNN", use_container_width=True):
@@ -622,7 +623,8 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                     }
                                     deployed_bot["config"]["model_type"] = "KNN"
                                     st.session_state.deployed_bots.append(deployed_bot)
-                                    st.success(f"✅ KNN Bot deployed!")
+                                    st.success(f"✅ KNN Bot deployed! Total bots: {len(st.session_state.deployed_bots)}")
+                                    st.info("👉 Check sidebar for bot")
 
                         # Single model deployment
                         elif use_rf and 'rf_model' in st.session_state:
@@ -638,7 +640,8 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                     "last_signal": None
                                 }
                                 st.session_state.deployed_bots.append(deployed_bot)
-                                st.success(f"✅ Bot '{bot_name}' deployed!")
+                                st.success(f"✅ Bot '{bot_name}' deployed! Total bots: {len(st.session_state.deployed_bots)}")
+                                st.info("👉 Check sidebar for bot")
 
                         elif use_knn and 'knn_model' in st.session_state:
                             if st.button("🚀 Deploy KNN Bot In-App", type="primary", use_container_width=True):
@@ -653,7 +656,8 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                                     "last_signal": None
                                 }
                                 st.session_state.deployed_bots.append(deployed_bot)
-                                st.success(f"✅ Bot '{bot_name}' deployed!")
+                                st.success(f"✅ Bot '{bot_name}' deployed! Total bots: {len(st.session_state.deployed_bots)}")
+                                st.info("👉 Check sidebar for bot")
 
                         else:
                             st.warning("⚠️ Please run analysis first to train models")
@@ -780,10 +784,14 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
 st.sidebar.markdown("---")
 st.sidebar.header("🤖 Active Bots")
 
-if len(st.session_state.deployed_bots) == 0:
+# Debug info
+bot_count = len(st.session_state.deployed_bots)
+st.sidebar.caption(f"Debug: {bot_count} bot(s) in memory")
+
+if bot_count == 0:
     st.sidebar.info("No active bots")
 else:
-    st.sidebar.metric("Active Bots", len(st.session_state.deployed_bots))
+    st.sidebar.metric("Active Bots", bot_count)
 
     # Show recent alerts
     if st.session_state.bot_alerts:
