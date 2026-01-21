@@ -770,3 +770,4 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.markdown("Built with ❤️ using Streamlit")
 st.sidebar.markdown("Data: Tiingo & FRED")
+
