@@ -19,6 +19,12 @@ st.set_page_config(
     layout="wide"
 )
 
+# Initialize session state for deployed bots
+if 'deployed_bots' not in st.session_state:
+    st.session_state.deployed_bots = []
+if 'bot_alerts' not in st.session_state:
+    st.session_state.bot_alerts = []
+
 # Title
 st.title("🤖 Trading Bot Tester")
 st.markdown("Machine Learning-powered trading signal generator for stocks and crypto")
@@ -501,83 +507,185 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                     st.dataframe(raw_data.tail(50))
 
             with tab4:
-                st.header("🤖 Deploy & Save Bot Configuration")
+                st.header("🤖 Deploy & Manage Bots")
 
                 st.markdown("""
-                Save your current bot configuration to deploy it for daily scanning.
-                The bot will use the trained model and selected indicators to generate signals.
+                Deploy bots in-app for monitoring or download configurations for external scanning.
+                Deployed bots will use trained models to monitor for signals.
                 """)
 
-                col1, col2 = st.columns(2)
+                # Create two sub-tabs
+                deploy_tab1, deploy_tab2 = st.tabs(["🚀 Deploy New Bot", "📡 Active Bots"])
 
-                with col1:
-                    st.subheader("📋 Current Configuration")
-                    bot_config = {
-                        "target_asset": target_asset,
-                        "start_date": start_date.strftime('%Y-%m-%d'),
-                        "end_date": end_date.strftime('%Y-%m-%d'),
-                        "market_context": market_context,
-                        "macro_context": macro_context,
-                        "indicators": indicator_config,
-                        "model_type": "Random Forest" if use_rf else "K-Nearest Neighbors",
-                        "model_params": {
-                            "n_estimators": n_estimators if use_rf else None,
-                            "max_depth": max_depth if use_rf else None,
-                            "n_neighbors": n_neighbors if use_knn else None
-                        },
-                        "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    }
+                with deploy_tab1:
+                    col1, col2 = st.columns(2)
 
-                    st.json(bot_config)
+                    with col1:
+                        st.subheader("📋 Current Configuration")
+                        bot_config = {
+                            "target_asset": target_asset,
+                            "start_date": start_date.strftime('%Y-%m-%d'),
+                            "end_date": end_date.strftime('%Y-%m-%d'),
+                            "market_context": market_context,
+                            "macro_context": macro_context,
+                            "indicators": indicator_config,
+                            "model_type": "Random Forest" if use_rf else "K-Nearest Neighbors",
+                            "model_params": {
+                                "n_estimators": n_estimators if use_rf else None,
+                                "max_depth": max_depth if use_rf else None,
+                                "n_neighbors": n_neighbors if use_knn else None
+                            },
+                            "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        }
 
-                    # Bot performance summary
-                    st.subheader("📊 Bot Performance")
-                    if use_rf:
-                        st.metric("Win Rate", f"{rf_results['overall']['win_rate']}%")
-                        st.metric("Total Signals", rf_results['overall']['total'])
-                        st.metric("Trades/Month", rf_results['trades_per_month'])
+                        st.json(bot_config)
 
-                with col2:
-                    st.subheader("💾 Save Configuration")
+                        # Bot performance summary
+                        st.subheader("📊 Bot Performance")
+                        if use_rf:
+                            st.metric("Win Rate", f"{rf_results['overall']['win_rate']}%")
+                            st.metric("Total Signals", rf_results['overall']['total'])
+                            st.metric("Trades/Month", rf_results['trades_per_month'])
 
-                    bot_name = st.text_input("Bot Name", value=f"{target_asset}_bot_{datetime.now().strftime('%Y%m%d')}")
+                    with col2:
+                        st.subheader("🚀 Deploy Options")
 
-                    if st.button("💾 Save Bot Configuration", type="primary"):
-                        # Save configuration as JSON
+                        bot_name = st.text_input("Bot Name", value=f"{target_asset}_bot_{datetime.now().strftime('%Y%m%d')}")
+
+                        # In-App Deployment
+                        if st.button("🚀 Deploy Bot In-App", type="primary", use_container_width=True):
+                            # Store bot in session state with trained model
+                            deployed_bot = {
+                                "name": bot_name,
+                                "config": bot_config,
+                                "model": rf_model if use_rf else knn_model,
+                                "model_type": "Random Forest" if use_rf else "KNN",
+                                "deployed_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                "status": "active",
+                                "last_scan": None,
+                                "last_signal": None
+                            }
+
+                            st.session_state.deployed_bots.append(deployed_bot)
+                            st.success(f"✅ Bot '{bot_name}' deployed successfully!")
+                            st.info("👉 Go to 'Active Bots' tab to manage and scan")
+                            st.rerun()
+
+                        st.markdown("---")
+
+                        # Download Configuration
+                        st.subheader("💾 Download Configuration")
                         config_json = json.dumps(bot_config, indent=2)
 
                         st.download_button(
                             label="📥 Download Bot Config (JSON)",
                             data=config_json,
                             file_name=f"{bot_name}_config.json",
-                            mime="application/json"
+                            mime="application/json",
+                            use_container_width=True
                         )
 
-                        st.success(f"✅ Bot configuration '{bot_name}' ready for download!")
+                        st.caption("Download for external scheduling/scanning")
 
-                    st.markdown("---")
-                    st.subheader("📅 Daily Scanning Setup")
-                    st.info("""
-                    **To enable daily scanning:**
+                with deploy_tab2:
+                    st.subheader("📡 Active Bots")
 
-                    1. Download the bot configuration above
-                    2. Use the config file with a scheduled task or cron job
-                    3. The bot will scan daily and alert on BUY signals
+                    if not st.session_state.deployed_bots:
+                        st.info("No bots deployed yet. Deploy a bot in the 'Deploy New Bot' tab.")
+                    else:
+                        # Display alerts first
+                        if st.session_state.bot_alerts:
+                            st.subheader("🔔 Recent Alerts")
+                            for alert in st.session_state.bot_alerts[-5:]:  # Show last 5 alerts
+                                alert_type = "🟢" if alert['signal'] == 'BUY' else "⚪"
+                                st.info(f"{alert_type} **{alert['bot_name']}** - {alert['signal']} signal detected at {alert['timestamp']}")
 
-                    **Example Python script for daily scanning:**
-                    ```python
-                    # Load config and run daily scan
-                    import json
-                    with open('bot_config.json', 'r') as f:
-                        config = json.load(f)
+                        st.markdown("---")
 
-                    # Your scanning logic here
-                    # Send alerts via email/SMS when signal detected
-                    ```
-                    """)
+                        # Display each deployed bot
+                        for idx, bot in enumerate(st.session_state.deployed_bots):
+                            with st.expander(f"🤖 {bot['name']} ({bot['model_type']}) - Status: {bot['status'].upper()}", expanded=True):
+                                col1, col2, col3 = st.columns([2, 2, 1])
 
-                    st.markdown("---")
-                    st.warning("⚠️ **Disclaimer:** Automated trading carries significant risk. Always review signals manually before trading.")
+                                with col1:
+                                    st.write(f"**Target:** {bot['config']['target_asset']}")
+                                    st.write(f"**Deployed:** {bot['deployed_at']}")
+                                    st.write(f"**Last Scan:** {bot['last_scan'] or 'Never'}")
+
+                                with col2:
+                                    st.write(f"**Last Signal:** {bot['last_signal'] or 'None'}")
+                                    st.write(f"**Model:** {bot['model_type']}")
+
+                                with col3:
+                                    # Scan button
+                                    if st.button("🔍 Scan Now", key=f"scan_{idx}"):
+                                        try:
+                                            # Get fresh data for scanning
+                                            scan_data = get_consolidated_data(
+                                                tiingo_key,
+                                                fred_key,
+                                                bot['config']['target_asset'],
+                                                bot['config']['market_context'],
+                                                bot['config']['macro_context'],
+                                                datetime.now() - timedelta(days=365),  # Last year of data
+                                                datetime.now()
+                                            )
+
+                                            # Build features using bot's indicator config
+                                            scan_df = build_lab_features(scan_data, bot['config']['target_asset'], bot['config']['indicators'])
+                                            scan_df = scan_df.dropna()
+
+                                            if len(scan_df) > 0:
+                                                # Get prediction
+                                                X_latest = scan_df.iloc[-1:][scan_df.columns.drop([f"{bot['config']['target_asset']}_target"])]
+                                                prediction = bot['model'].predict(X_latest)[0]
+                                                signal = "BUY" if prediction == 1 else "WAIT"
+
+                                                # Update bot status
+                                                bot['last_scan'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                                bot['last_signal'] = signal
+
+                                                # If BUY signal, add to alerts
+                                                if signal == "BUY":
+                                                    alert = {
+                                                        "bot_name": bot['name'],
+                                                        "signal": signal,
+                                                        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                        "asset": bot['config']['target_asset']
+                                                    }
+                                                    st.session_state.bot_alerts.append(alert)
+
+                                                st.success(f"Scan complete! Signal: **{signal}**")
+                                                st.rerun()
+                                            else:
+                                                st.error("Insufficient data for scanning")
+
+                                        except Exception as e:
+                                            st.error(f"Scan failed: {str(e)}")
+
+                                # Bot controls
+                                col1, col2 = st.columns(2)
+
+                                with col1:
+                                    # Pause/Resume button
+                                    if bot['status'] == 'active':
+                                        if st.button("⏸️ Pause", key=f"pause_{idx}", use_container_width=True):
+                                            bot['status'] = 'paused'
+                                            st.rerun()
+                                    else:
+                                        if st.button("▶️ Resume", key=f"resume_{idx}", use_container_width=True):
+                                            bot['status'] = 'active'
+                                            st.rerun()
+
+                                with col2:
+                                    # Delete button
+                                    if st.button("🗑️ Delete", key=f"delete_{idx}", use_container_width=True):
+                                        st.session_state.deployed_bots.pop(idx)
+                                        st.success(f"Bot '{bot['name']}' deleted")
+                                        st.rerun()
+
+                st.markdown("---")
+                st.warning("⚠️ **Disclaimer:** Automated trading carries significant risk. Always review signals manually before trading.")
 
 # Footer
 st.sidebar.markdown("---")
