@@ -210,8 +210,7 @@ else:
                                 scan_df = build_lab_features(scan_data, bot['config']['target_asset'], bot['config']['indicators'])
 
                                 if len(scan_df) > 0:
-                                    # Get feature columns (exclude target asset price column)
-                                    feature_cols = [col for col in scan_df.columns if col != bot['config']['target_asset']]
+                                    # Get all columns for features (model was trained with all columns including target price)
                                     X_latest = scan_df[feature_cols].iloc[-1:]
                                     prediction = bot['model'].predict(X_latest)[0]
                                     signal = "BUY" if prediction == 1 else "WAIT"
@@ -273,10 +272,9 @@ else:
                                 st.write(f"Debug: After features {len(scan_df)} rows, Columns: {list(scan_df.columns)}")
 
                                 if len(scan_df) > 0:
-                                    # Get feature columns (exclude target asset price column)
-                                    feature_cols = [col for col in scan_df.columns if col != bot['config']['target_asset']]
-                                    st.write(f"Debug: Feature columns: {feature_cols}")
-                                    X_latest = scan_df[feature_cols].iloc[-1:]
+                                    # Get all columns for features (model was trained with all columns including target price)
+                                    st.write(f"Debug: Feature columns: {list(scan_df.columns)}")
+                                    X_latest = scan_df.iloc[-1:]
                                     st.write(f"Debug: X_latest shape: {X_latest.shape}")
                                     prediction = bot['model'].predict(X_latest)[0]
                                     signal = "BUY" if prediction == 1 else "WAIT"
