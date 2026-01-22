@@ -723,8 +723,11 @@ if st.session_state.get('run_analysis_clicked', False):
                                         st.session_state.scanning_bot = bot['name']
                                         st.rerun()
 
-                                # Perform scan if this bot is marked for scanning
-                                if st.session_state.scanning_bot == bot['name']:
+                                # Perform scan if this bot is marked for scanning (only once per button click)
+                                if st.session_state.scanning_bot == bot['name'] and not st.session_state.get('scan_in_progress', False):
+                                    # Set in-progress flag immediately to prevent re-execution
+                                    st.session_state.scan_in_progress = True
+
                                     with st.spinner(f"Scanning {bot['name']}..."):
                                         try:
                                             # Get fresh data for scanning
@@ -770,8 +773,9 @@ if st.session_state.get('run_analysis_clicked', False):
                                             st.error(f"Scan failed: {str(e)}")
 
                                         finally:
-                                            # Clear scanning flag
+                                            # Clear both flags
                                             st.session_state.scanning_bot = None
+                                            st.session_state.scan_in_progress = False
 
                                 # Bot controls
                                 col1, col2 = st.columns(2)
