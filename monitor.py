@@ -175,13 +175,15 @@ else:
     st.markdown("---")
 
     # Recent alerts
+    st.subheader("🔔 Recent Alerts")
     if st.session_state.bot_alerts:
-        st.subheader("🔔 Recent Alerts")
         recent_alerts = st.session_state.bot_alerts[-10:][::-1]  # Last 10, reversed
 
         for alert in recent_alerts:
             alert_color = "🟢" if alert['signal'] == 'BUY' else "⚪"
             st.info(f"{alert_color} **{alert['bot_name']}** - {alert['signal']} signal on {alert['asset']} at {alert['timestamp']}")
+    else:
+        st.info("No alerts yet. Scan your bots to detect BUY signals!")
 
     st.markdown("---")
 
@@ -211,7 +213,7 @@ else:
 
                                 if len(scan_df) > 0:
                                     # Get all columns for features (model was trained with all columns including target price)
-                                    X_latest = scan_df[feature_cols].iloc[-1:]
+                                    X_latest = scan_df.iloc[-1:]
                                     prediction = bot['model'].predict(X_latest)[0]
                                     signal = "BUY" if prediction == 1 else "WAIT"
 
