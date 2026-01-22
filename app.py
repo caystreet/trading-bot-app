@@ -499,8 +499,11 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
     st.session_state.run_analysis_clicked = True
 
 if st.session_state.get('run_analysis_clicked', False):
-    if not tiingo_key or not fred_key:
-        st.error("Please provide both API keys")
+    # Validate API keys based on data source
+    if data_source == "Tiingo" and (not tiingo_key or not fred_key):
+        st.error("Please provide Tiingo and FRED API keys")
+    elif data_source == "Alpha Vantage" and (not alphavantage_key or not fred_key):
+        st.error("Please provide Alpha Vantage and FRED API keys")
     else:
         # Create indicator configuration
         indicator_config = {
