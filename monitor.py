@@ -263,6 +263,7 @@ else:
 
                             if scan_data is not None:
                                 st.write(f"Debug: Fetched {len(scan_data)} rows of raw data")
+                                st.write(f"Debug: Indicator config: {bot['config']['indicators']}")
                                 scan_df = build_lab_features(scan_data, bot['config']['target_asset'], bot['config']['indicators'])
                                 st.write(f"Debug: After features {len(scan_df)} rows, Columns: {list(scan_df.columns)}")
 
