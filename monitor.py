@@ -105,12 +105,14 @@ def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, ma
 
         # Fetch market data
         all_market = [target_asset] + market_context
+        st.write(f"Debug: Fetching {all_market} from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         df_market = client.get_dataframe(
             all_market,
             metric_name='close',
             startDate=start_date.strftime('%Y-%m-%d'),
             endDate=end_date.strftime('%Y-%m-%d')
         )
+        st.write(f"Debug: Market data fetched: {len(df_market)} rows")
 
         # Fetch volume data
         try:
@@ -200,7 +202,7 @@ else:
                                 bot['config']['target_asset'],
                                 bot['config']['market_context'],
                                 bot['config']['macro_context'],
-                                datetime.now() - timedelta(days=1825),  # 5 years for all indicators
+                                datetime.now() - timedelta(days=800),  # ~2 years for indicators
                                 datetime.now()
                             )
 
@@ -251,14 +253,17 @@ else:
                 if st.button(f"🔍 Scan", key=f"scan_{idx}"):
                     with st.spinner(f"Scanning {bot['name']}..."):
                         try:
+                            start_dt = datetime.now() - timedelta(days=800)
+                            end_dt = datetime.now()
+                            st.write(f"Debug: Scanning with dates {start_dt.date()} to {end_dt.date()}")
                             scan_data = get_consolidated_data(
                                 tiingo_key,
                                 fred_key,
                                 bot['config']['target_asset'],
                                 bot['config']['market_context'],
                                 bot['config']['macro_context'],
-                                datetime.now() - timedelta(days=1825),  # 5 years for all indicators
-                                datetime.now()
+                                start_dt,
+                                end_dt
                             )
 
                             if scan_data is not None:
