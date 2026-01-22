@@ -200,7 +200,7 @@ else:
                                 bot['config']['target_asset'],
                                 bot['config']['market_context'],
                                 bot['config']['macro_context'],
-                                datetime.now() - timedelta(days=730),  # 2 years for indicators
+                                datetime.now() - timedelta(days=1825),  # 5 years for all indicators
                                 datetime.now()
                             )
 
@@ -257,7 +257,7 @@ else:
                                 bot['config']['target_asset'],
                                 bot['config']['market_context'],
                                 bot['config']['macro_context'],
-                                datetime.now() - timedelta(days=730),  # 2 years for indicators
+                                datetime.now() - timedelta(days=1825),  # 5 years for all indicators
                                 datetime.now()
                             )
 
