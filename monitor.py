@@ -262,12 +262,16 @@ else:
                             )
 
                             if scan_data is not None:
+                                st.write(f"Debug: Fetched {len(scan_data)} rows of raw data")
                                 scan_df = build_lab_features(scan_data, bot['config']['target_asset'], bot['config']['indicators'])
+                                st.write(f"Debug: After features {len(scan_df)} rows, Columns: {list(scan_df.columns)}")
 
                                 if len(scan_df) > 0:
                                     # Get feature columns (exclude target asset price column)
                                     feature_cols = [col for col in scan_df.columns if col != bot['config']['target_asset']]
+                                    st.write(f"Debug: Feature columns: {feature_cols}")
                                     X_latest = scan_df[feature_cols].iloc[-1:]
+                                    st.write(f"Debug: X_latest shape: {X_latest.shape}")
                                     prediction = bot['model'].predict(X_latest)[0]
                                     signal = "BUY" if prediction == 1 else "WAIT"
 
@@ -285,7 +289,7 @@ else:
 
                                     st.success(f"Signal: **{signal}**")
                                 else:
-                                    st.error(f"Insufficient data after applying indicators. Try bot with fewer long-term indicators (like 200-day SMA).")
+                                    st.error(f"Insufficient data after applying indicators. Raw data had {len(scan_data)} rows but after dropna() got 0 rows.")
                             else:
                                 st.error("Data fetch failed")
                         except Exception as e:
