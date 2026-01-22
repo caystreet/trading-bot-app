@@ -208,7 +208,9 @@ else:
                                 scan_df = build_lab_features(scan_data, bot['config']['target_asset'], bot['config']['indicators'])
 
                                 if len(scan_df) > 0:
-                                    X_latest = scan_df.iloc[-1:][scan_df.columns.drop([f"{bot['config']['target_asset']}_target"])]
+                                    # Get feature columns (exclude target asset price column)
+                                    feature_cols = [col for col in scan_df.columns if col != bot['config']['target_asset']]
+                                    X_latest = scan_df[feature_cols].iloc[-1:]
                                     prediction = bot['model'].predict(X_latest)[0]
                                     signal = "BUY" if prediction == 1 else "WAIT"
 
@@ -263,7 +265,9 @@ else:
                                 scan_df = build_lab_features(scan_data, bot['config']['target_asset'], bot['config']['indicators'])
 
                                 if len(scan_df) > 0:
-                                    X_latest = scan_df.iloc[-1:][scan_df.columns.drop([f"{bot['config']['target_asset']}_target"])]
+                                    # Get feature columns (exclude target asset price column)
+                                    feature_cols = [col for col in scan_df.columns if col != bot['config']['target_asset']]
+                                    X_latest = scan_df[feature_cols].iloc[-1:]
                                     prediction = bot['model'].predict(X_latest)[0]
                                     signal = "BUY" if prediction == 1 else "WAIT"
 
