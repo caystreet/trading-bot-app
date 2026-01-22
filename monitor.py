@@ -200,7 +200,7 @@ else:
                                 bot['config']['target_asset'],
                                 bot['config']['market_context'],
                                 bot['config']['macro_context'],
-                                datetime.now() - timedelta(days=365),
+                                datetime.now() - timedelta(days=730),  # 2 years for indicators
                                 datetime.now()
                             )
 
@@ -257,7 +257,7 @@ else:
                                 bot['config']['target_asset'],
                                 bot['config']['market_context'],
                                 bot['config']['macro_context'],
-                                datetime.now() - timedelta(days=365),
+                                datetime.now() - timedelta(days=730),  # 2 years for indicators
                                 datetime.now()
                             )
 
@@ -285,7 +285,7 @@ else:
 
                                     st.success(f"Signal: **{signal}**")
                                 else:
-                                    st.error("Insufficient data")
+                                    st.error(f"Insufficient data after applying indicators. Try bot with fewer long-term indicators (like 200-day SMA).")
                             else:
                                 st.error("Data fetch failed")
                         except Exception as e:
