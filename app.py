@@ -11,6 +11,7 @@ import json
 import pickle
 from datetime import datetime, timedelta
 import os
+import requests
 warnings.filterwarnings('ignore')
 
 # Page configuration
@@ -65,11 +66,23 @@ st.sidebar.header("⚙️ Configuration")
 
 # API Keys
 with st.sidebar.expander("🔑 API Keys", expanded=True):
-    tiingo_key = st.text_input(
-        "Tiingo API Key",
-        value="e30bc8b0b855970d930743b116e517e36b72cc8f",
-        type="password"
-    )
+    data_source = st.radio("Data Source", ["Tiingo", "Alpha Vantage"], index=0)
+
+    if data_source == "Tiingo":
+        tiingo_key = st.text_input(
+            "Tiingo API Key",
+            value="e30bc8b0b855970d930743b116e517e36b72cc8f",
+            type="password"
+        )
+        alphavantage_key = None
+    else:
+        alphavantage_key = st.text_input(
+            "Alpha Vantage API Key",
+            value="8IBMQ7XLHZ8CVWPC",
+            type="password"
+        )
+        tiingo_key = None
+
     fred_key = st.text_input(
         "FRED API Key",
         value="1c1c04541bfefa93e9cb0db265da9c19",
@@ -135,6 +148,17 @@ with st.sidebar.expander("📈 Technical Indicators", expanded=True):
     use_volume_sma = st.checkbox("Volume SMA (20-day)", value=True)
     use_volume_ratio = st.checkbox("Volume Ratio (vs 20d avg)", value=True)
 
+    if data_source == "Alpha Vantage":
+        st.markdown("**Alpha Vantage Technical Indicators**")
+        use_av_rsi = st.checkbox("RSI (14)", value=False)
+        use_av_macd = st.checkbox("MACD", value=False)
+        use_av_adx = st.checkbox("ADX (14)", value=False)
+        use_av_cci = st.checkbox("CCI (20)", value=False)
+        use_av_stoch = st.checkbox("Stochastic Oscillator", value=False)
+        use_av_bbands = st.checkbox("Bollinger Bands", value=False)
+    else:
+        use_av_rsi = use_av_macd = use_av_adx = use_av_cci = use_av_stoch = use_av_bbands = False
+
 # Model selection
 with st.sidebar.expander("🧠 Model Selection", expanded=True):
     use_rf = st.checkbox("Random Forest", value=True)
@@ -148,6 +172,111 @@ with st.sidebar.expander("🧠 Model Selection", expanded=True):
         n_neighbors = st.slider("KNN: Number of Neighbors", 3, 15, 5)
 
 # --- DATA FUNCTIONS ---
+
+# Alpha Vantage Helper Functions
+def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
+    """Fetch daily price data from Alpha Vantage"""
+    url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize={outputsize}&apikey={api_key}'
+    response = requests.get(url)
+    data = response.json()
+
+    if 'Time Series (Daily)' in data:
+        df = pd.DataFrame.from_dict(data['Time Series (Daily)'], orient='index')
+        df.index = pd.to_datetime(df.index)
+        df = df.astype(float)
+        df.columns = ['open', 'high', 'low', 'close', 'volume']
+        df = df.sort_index()
+        return df
+    return None
+
+def fetch_alphavantage_indicator(symbol, api_key, function, **params):
+    """Fetch technical indicator from Alpha Vantage"""
+    param_str = '&'.join([f"{k}={v}" for k, v in params.items()])
+    url = f'https://www.alphavantage.co/query?function={function}&symbol={symbol}&{param_str}&apikey={api_key}'
+    response = requests.get(url)
+    data = response.json()
+
+    # Different indicators have different keys
+    for key in data.keys():
+        if 'Technical Analysis' in key or key.startswith('Technical'):
+            df = pd.DataFrame.from_dict(data[key], orient='index')
+            df.index = pd.to_datetime(df.index)
+            df = df.astype(float)
+            df = df.sort_index()
+            return df
+    return None
+
+@st.cache_data(ttl=3600)
+def get_alphavantage_data(av_key, fred_key, target_asset, market_context, macro_context, start_date, end_date, av_indicators):
+    """Fetch data from Alpha Vantage with technical indicators"""
+    try:
+        fred = Fred(api_key=fred_key)
+
+        # Fetch target asset price data
+        df_target = fetch_alphavantage_daily(target_asset, av_key)
+        if df_target is None:
+            st.error(f"Failed to fetch {target_asset} from Alpha Vantage")
+            return None
+
+        # Keep only close price and volume for target
+        df_market = df_target[['close', 'volume']].copy()
+        df_market.columns = [target_asset, f"{target_asset}_volume"]
+
+        # Fetch market context assets
+        for asset in market_context:
+            df_context = fetch_alphavantage_daily(asset, av_key)
+            if df_context is not None:
+                df_market = df_market.join(df_context[['close']].rename(columns={'close': asset}), how='outer')
+
+        # Fetch Alpha Vantage technical indicators
+        if av_indicators.get('use_av_rsi'):
+            df_rsi = fetch_alphavantage_indicator(target_asset, av_key, 'RSI', interval='daily', time_period=14, series_type='close')
+            if df_rsi is not None:
+                df_market = df_market.join(df_rsi.rename(columns={'RSI': 'AV_RSI'}), how='left')
+
+        if av_indicators.get('use_av_macd'):
+            df_macd = fetch_alphavantage_indicator(target_asset, av_key, 'MACD', interval='daily', series_type='close')
+            if df_macd is not None:
+                df_market = df_market.join(df_macd.add_prefix('AV_'), how='left')
+
+        if av_indicators.get('use_av_adx'):
+            df_adx = fetch_alphavantage_indicator(target_asset, av_key, 'ADX', interval='daily', time_period=14)
+            if df_adx is not None:
+                df_market = df_market.join(df_adx.rename(columns={'ADX': 'AV_ADX'}), how='left')
+
+        if av_indicators.get('use_av_cci'):
+            df_cci = fetch_alphavantage_indicator(target_asset, av_key, 'CCI', interval='daily', time_period=20)
+            if df_cci is not None:
+                df_market = df_market.join(df_cci.rename(columns={'CCI': 'AV_CCI'}), how='left')
+
+        if av_indicators.get('use_av_stoch'):
+            df_stoch = fetch_alphavantage_indicator(target_asset, av_key, 'STOCH', interval='daily')
+            if df_stoch is not None:
+                df_market = df_market.join(df_stoch.add_prefix('AV_'), how='left')
+
+        if av_indicators.get('use_av_bbands'):
+            df_bbands = fetch_alphavantage_indicator(target_asset, av_key, 'BBANDS', interval='daily', time_period=20, series_type='close')
+            if df_bbands is not None:
+                df_market = df_market.join(df_bbands.add_prefix('AV_'), how='left')
+
+        # Fetch macro data from FRED
+        for macro in macro_context:
+            try:
+                macro_series = fred.get_series(macro, start_date, end_date)
+                macro_series = macro_series.resample('D').ffill()
+                df_market = df_market.join(macro_series.rename(macro), how='left')
+                df_market[macro] = df_market[macro].ffill()
+            except:
+                pass
+
+        # Filter by date range
+        df_market = df_market.loc[start_date:end_date]
+
+        return df_market.dropna()
+    except Exception as e:
+        st.error(f"Alpha Vantage data fetch error: {str(e)}")
+        return None
+
 @st.cache_data(ttl=3600)
 def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, macro_context, start_date, end_date):
     """Fetch and consolidate market and macro data"""
@@ -389,11 +518,27 @@ if st.session_state.get('run_analysis_clicked', False):
             'use_volume_ratio': use_volume_ratio
         }
 
+        # Alpha Vantage indicators config
+        av_indicators_config = {
+            'use_av_rsi': use_av_rsi,
+            'use_av_macd': use_av_macd,
+            'use_av_adx': use_av_adx,
+            'use_av_cci': use_av_cci,
+            'use_av_stoch': use_av_stoch,
+            'use_av_bbands': use_av_bbands
+        }
+
         with st.spinner("Fetching data..."):
-            raw_data = get_consolidated_data(
-                tiingo_key, fred_key, target_asset,
-                market_context, macro_context, start_date, end_date
-            )
+            if data_source == "Alpha Vantage":
+                raw_data = get_alphavantage_data(
+                    alphavantage_key, fred_key, target_asset,
+                    market_context, macro_context, start_date, end_date, av_indicators_config
+                )
+            else:
+                raw_data = get_consolidated_data(
+                    tiingo_key, fred_key, target_asset,
+                    market_context, macro_context, start_date, end_date
+                )
 
         if raw_data is not None:
             with st.spinner("Building features..."):
