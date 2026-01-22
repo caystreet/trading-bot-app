@@ -716,6 +716,8 @@ if st.session_state.get('run_analysis_clicked', False):
                             "market_context": market_context,
                             "macro_context": macro_context,
                             "indicators": indicator_config,
+                            "av_indicators": av_indicators_config if data_source == "Alpha Vantage" else {},
+                            "data_source": data_source,
                             "model_type": "Random Forest" if use_rf else "K-Nearest Neighbors",
                             "model_params": {
                                 "n_estimators": n_estimators if use_rf else None,

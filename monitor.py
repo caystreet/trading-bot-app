@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from tiingo import TiingoClient
 from fredapi import Fred
 import warnings
+import requests
 warnings.filterwarnings('ignore')
 
 # Page configuration
@@ -27,11 +28,23 @@ if 'bot_alerts' not in st.session_state:
 st.sidebar.header("⚙️ Configuration")
 
 with st.sidebar.expander("🔑 API Keys", expanded=True):
-    tiingo_key = st.text_input(
-        "Tiingo API Key",
-        value="e30bc8b0b855970d930743b116e517e36b72cc8f",
-        type="password"
-    )
+    data_source = st.radio("Data Source", ["Tiingo", "Alpha Vantage"], index=0)
+
+    if data_source == "Tiingo":
+        tiingo_key = st.text_input(
+            "Tiingo API Key",
+            value="e30bc8b0b855970d930743b116e517e36b72cc8f",
+            type="password"
+        )
+        alphavantage_key = None
+    else:
+        alphavantage_key = st.text_input(
+            "Alpha Vantage API Key",
+            value="8IBMQ7XLHZ8CVWPC",
+            type="password"
+        )
+        tiingo_key = None
+
     fred_key = st.text_input(
         "FRED API Key",
         value="1c1c04541bfefa93e9cb0db265da9c19",
@@ -95,6 +108,109 @@ def build_lab_features(df, target, indicator_config):
             df['Volume_Ratio'] = df[volume_col] / volume_avg
 
     return df.dropna()
+
+# Alpha Vantage Helper Functions
+def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
+    """Fetch daily price data from Alpha Vantage"""
+    url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize={outputsize}&apikey={api_key}'
+    response = requests.get(url)
+    data = response.json()
+
+    if 'Time Series (Daily)' in data:
+        df = pd.DataFrame.from_dict(data['Time Series (Daily)'], orient='index')
+        df.index = pd.to_datetime(df.index)
+        df = df.astype(float)
+        df.columns = ['open', 'high', 'low', 'close', 'volume']
+        df = df.sort_index()
+        return df
+    return None
+
+def fetch_alphavantage_indicator(symbol, api_key, function, **params):
+    """Fetch technical indicator from Alpha Vantage"""
+    param_str = '&'.join([f"{k}={v}" for k, v in params.items()])
+    url = f'https://www.alphavantage.co/query?function={function}&symbol={symbol}&{param_str}&apikey={api_key}'
+    response = requests.get(url)
+    data = response.json()
+
+    for key in data.keys():
+        if 'Technical Analysis' in key or key.startswith('Technical'):
+            df = pd.DataFrame.from_dict(data[key], orient='index')
+            df.index = pd.to_datetime(df.index)
+            df = df.astype(float)
+            df = df.sort_index()
+            return df
+    return None
+
+@st.cache_data(ttl=3600)
+def get_alphavantage_data(av_key, fred_key, target_asset, market_context, macro_context, start_date, end_date, av_indicators):
+    """Fetch data from Alpha Vantage with technical indicators"""
+    try:
+        fred = Fred(api_key=fred_key)
+
+        # Fetch target asset price data
+        df_target = fetch_alphavantage_daily(target_asset, av_key)
+        if df_target is None:
+            return None
+
+        # Keep only close price and volume for target
+        df_market = df_target[['close', 'volume']].copy()
+        df_market.columns = [target_asset, f"{target_asset}_volume"]
+
+        # Fetch market context assets
+        for asset in market_context:
+            df_context = fetch_alphavantage_daily(asset, av_key)
+            if df_context is not None:
+                df_market = df_market.join(df_context[['close']].rename(columns={'close': asset}), how='outer')
+
+        # Fetch Alpha Vantage technical indicators if specified
+        if av_indicators:
+            if av_indicators.get('use_av_rsi'):
+                df_rsi = fetch_alphavantage_indicator(target_asset, av_key, 'RSI', interval='daily', time_period=14, series_type='close')
+                if df_rsi is not None:
+                    df_market = df_market.join(df_rsi.rename(columns={'RSI': 'AV_RSI'}), how='left')
+
+            if av_indicators.get('use_av_macd'):
+                df_macd = fetch_alphavantage_indicator(target_asset, av_key, 'MACD', interval='daily', series_type='close')
+                if df_macd is not None:
+                    df_market = df_market.join(df_macd.add_prefix('AV_'), how='left')
+
+            if av_indicators.get('use_av_adx'):
+                df_adx = fetch_alphavantage_indicator(target_asset, av_key, 'ADX', interval='daily', time_period=14)
+                if df_adx is not None:
+                    df_market = df_market.join(df_adx.rename(columns={'ADX': 'AV_ADX'}), how='left')
+
+            if av_indicators.get('use_av_cci'):
+                df_cci = fetch_alphavantage_indicator(target_asset, av_key, 'CCI', interval='daily', time_period=20)
+                if df_cci is not None:
+                    df_market = df_market.join(df_cci.rename(columns={'CCI': 'AV_CCI'}), how='left')
+
+            if av_indicators.get('use_av_stoch'):
+                df_stoch = fetch_alphavantage_indicator(target_asset, av_key, 'STOCH', interval='daily')
+                if df_stoch is not None:
+                    df_market = df_market.join(df_stoch.add_prefix('AV_'), how='left')
+
+            if av_indicators.get('use_av_bbands'):
+                df_bbands = fetch_alphavantage_indicator(target_asset, av_key, 'BBANDS', interval='daily', time_period=20, series_type='close')
+                if df_bbands is not None:
+                    df_market = df_market.join(df_bbands.add_prefix('AV_'), how='left')
+
+        # Fetch macro data from FRED
+        for macro in macro_context:
+            try:
+                macro_series = fred.get_series(macro, start_date, end_date)
+                macro_series = macro_series.resample('D').ffill()
+                df_market = df_market.join(macro_series.rename(macro), how='left')
+                df_market[macro] = df_market[macro].ffill()
+            except:
+                pass
+
+        # Filter by date range
+        df_market = df_market.loc[start_date:end_date]
+
+        return df_market.dropna()
+    except Exception as e:
+        st.error(f"Alpha Vantage data fetch error: {str(e)}")
+        return None
 
 @st.cache_data(ttl=3600)
 def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, macro_context, start_date, end_date):
@@ -198,15 +314,31 @@ else:
                 for bot in st.session_state.monitor_bots:
                     if bot['status'] == 'active':
                         try:
-                            scan_data = get_consolidated_data(
-                                tiingo_key,
-                                fred_key,
-                                bot['config']['target_asset'],
-                                bot['config']['market_context'],
-                                bot['config']['macro_context'],
-                                datetime.now() - timedelta(days=800),  # ~2 years for indicators
-                                datetime.now()
-                            )
+                            # Get AV indicators config from bot if it exists
+                            av_indicators = bot['config'].get('av_indicators', {})
+
+                            # Use appropriate data source
+                            if data_source == "Alpha Vantage" and alphavantage_key:
+                                scan_data = get_alphavantage_data(
+                                    alphavantage_key,
+                                    fred_key,
+                                    bot['config']['target_asset'],
+                                    bot['config']['market_context'],
+                                    bot['config']['macro_context'],
+                                    datetime.now() - timedelta(days=800),
+                                    datetime.now(),
+                                    av_indicators
+                                )
+                            else:
+                                scan_data = get_consolidated_data(
+                                    tiingo_key,
+                                    fred_key,
+                                    bot['config']['target_asset'],
+                                    bot['config']['market_context'],
+                                    bot['config']['macro_context'],
+                                    datetime.now() - timedelta(days=800),
+                                    datetime.now()
+                                )
 
                             if scan_data is not None:
                                 scan_df = build_lab_features(scan_data, bot['config']['target_asset'], bot['config']['indicators'])
@@ -257,15 +389,32 @@ else:
                             start_dt = datetime.now() - timedelta(days=800)
                             end_dt = datetime.now()
                             st.write(f"Debug: Scanning with dates {start_dt.date()} to {end_dt.date()}")
-                            scan_data = get_consolidated_data(
-                                tiingo_key,
-                                fred_key,
-                                bot['config']['target_asset'],
-                                bot['config']['market_context'],
-                                bot['config']['macro_context'],
-                                start_dt,
-                                end_dt
-                            )
+
+                            # Get AV indicators config from bot if it exists
+                            av_indicators = bot['config'].get('av_indicators', {})
+
+                            # Use appropriate data source
+                            if data_source == "Alpha Vantage" and alphavantage_key:
+                                scan_data = get_alphavantage_data(
+                                    alphavantage_key,
+                                    fred_key,
+                                    bot['config']['target_asset'],
+                                    bot['config']['market_context'],
+                                    bot['config']['macro_context'],
+                                    start_dt,
+                                    end_dt,
+                                    av_indicators
+                                )
+                            else:
+                                scan_data = get_consolidated_data(
+                                    tiingo_key,
+                                    fred_key,
+                                    bot['config']['target_asset'],
+                                    bot['config']['market_context'],
+                                    bot['config']['macro_context'],
+                                    start_dt,
+                                    end_dt
+                                )
 
                             if scan_data is not None:
                                 st.write(f"Debug: Fetched {len(scan_data)} rows of raw data")
