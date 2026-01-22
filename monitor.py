@@ -112,17 +112,46 @@ def build_lab_features(df, target, indicator_config):
 # Alpha Vantage Helper Functions
 def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
     """Fetch daily price data from Alpha Vantage"""
-    url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize={outputsize}&apikey={api_key}'
-    response = requests.get(url)
-    data = response.json()
+    # Check if it's a crypto symbol
+    crypto_pairs = ['BTCUSD', 'ETHUSD', 'SOLUSD', 'BTC', 'ETH', 'SOL']
+    is_crypto = any(crypto in symbol.upper() for crypto in crypto_pairs)
 
-    if 'Time Series (Daily)' in data:
-        df = pd.DataFrame.from_dict(data['Time Series (Daily)'], orient='index')
-        df.index = pd.to_datetime(df.index)
-        df = df.astype(float)
-        df.columns = ['open', 'high', 'low', 'close', 'volume']
-        df = df.sort_index()
-        return df
+    if is_crypto:
+        # For crypto, use DIGITAL_CURRENCY_DAILY
+        if 'USD' in symbol:
+            base = symbol.replace('USD', '')
+            market = 'USD'
+        else:
+            base = symbol
+            market = 'USD'
+
+        url = f'https://www.alphavantage.co/query?function=DIGITAL_CURRENCY_DAILY&symbol={base}&market={market}&apikey={api_key}'
+        response = requests.get(url)
+        data = response.json()
+
+        if 'Time Series (Digital Currency Daily)' in data:
+            df = pd.DataFrame.from_dict(data['Time Series (Digital Currency Daily)'], orient='index')
+            df.index = pd.to_datetime(df.index)
+            # Crypto data has different column format
+            df = df[[f'4a. close ({market})', f'5. volume']].copy()
+            df.columns = ['close', 'volume']
+            df = df.astype(float)
+            df = df.sort_index()
+            return df
+    else:
+        # For stocks, use TIME_SERIES_DAILY
+        url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize={outputsize}&apikey={api_key}'
+        response = requests.get(url)
+        data = response.json()
+
+        if 'Time Series (Daily)' in data:
+            df = pd.DataFrame.from_dict(data['Time Series (Daily)'], orient='index')
+            df.index = pd.to_datetime(df.index)
+            df = df.astype(float)
+            df.columns = ['open', 'high', 'low', 'close', 'volume']
+            df = df.sort_index()
+            return df
+
     return None
 
 def fetch_alphavantage_indicator(symbol, api_key, function, **params):
