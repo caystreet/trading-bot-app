@@ -31,6 +31,8 @@ if 'bot_alerts' not in st.session_state:
     st.session_state.bot_alerts = []
 if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
+if 'scanning_bot' not in st.session_state:
+    st.session_state.scanning_bot = None
 
 def export_all_bots():
     """Export all bots as a downloadable file"""
@@ -715,8 +717,15 @@ if st.session_state.get('run_analysis_clicked', False):
                                     st.write(f"**Model:** {bot['model_type']}")
 
                                 with col3:
-                                    # Scan button
-                                    if st.button("🔍 Scan Now", key=f"scan_{idx}"):
+                                    # Scan button - prevent multiple simultaneous scans
+                                    scan_disabled = st.session_state.scanning_bot is not None
+                                    if st.button("🔍 Scan Now", key=f"scan_{idx}", disabled=scan_disabled):
+                                        st.session_state.scanning_bot = bot['name']
+                                        st.rerun()
+
+                                # Perform scan if this bot is marked for scanning
+                                if st.session_state.scanning_bot == bot['name']:
+                                    with st.spinner(f"Scanning {bot['name']}..."):
                                         try:
                                             # Get fresh data for scanning
                                             scan_data = get_consolidated_data(
@@ -754,12 +763,15 @@ if st.session_state.get('run_analysis_clicked', False):
                                                     st.session_state.bot_alerts.append(alert)
 
                                                 st.success(f"Scan complete! Signal: **{signal}**")
-                                                st.rerun()
                                             else:
                                                 st.error("Insufficient data for scanning")
 
                                         except Exception as e:
                                             st.error(f"Scan failed: {str(e)}")
+
+                                        finally:
+                                            # Clear scanning flag
+                                            st.session_state.scanning_bot = None
 
                                 # Bot controls
                                 col1, col2 = st.columns(2)
