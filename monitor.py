@@ -139,6 +139,9 @@ def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
         if 'Note' in data:
             st.warning(f"Alpha Vantage Note for {symbol}: {data['Note']}")
             return None
+        if 'Information' in data:
+            st.warning(f"Alpha Vantage Information for {symbol}: {data['Information']}")
+            return None
 
         if 'Time Series (Digital Currency Daily)' in data:
             df = pd.DataFrame.from_dict(data['Time Series (Digital Currency Daily)'], orient='index')
@@ -162,6 +165,17 @@ def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
 
         # Debug: Show what we got from API
         st.info(f"Debug - API Response Keys for {symbol}: {list(data.keys())}")
+
+        # Check for API errors
+        if 'Error Message' in data:
+            st.error(f"Alpha Vantage Error for {symbol}: {data['Error Message']}")
+            return None
+        if 'Note' in data:
+            st.warning(f"Alpha Vantage Note for {symbol}: {data['Note']}")
+            return None
+        if 'Information' in data:
+            st.warning(f"Alpha Vantage Information for {symbol}: {data['Information']}")
+            return None
 
         if 'Time Series (Daily)' in data:
             df = pd.DataFrame.from_dict(data['Time Series (Daily)'], orient='index')
