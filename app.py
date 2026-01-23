@@ -174,7 +174,7 @@ with st.sidebar.expander("🧠 Model Selection", expanded=True):
 # --- DATA FUNCTIONS ---
 
 # Alpha Vantage Helper Functions
-def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
+def fetch_alphavantage_daily(symbol, api_key, outputsize='compact'):
     """Fetch daily price data from Alpha Vantage"""
     # Check if it's a crypto symbol
     crypto_pairs = ['BTCUSD', 'ETHUSD', 'SOLUSD', 'BTC', 'ETH', 'SOL']
@@ -211,8 +211,24 @@ def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
             df = pd.DataFrame.from_dict(data['Time Series (Digital Currency Daily)'], orient='index')
             df.index = pd.to_datetime(df.index)
             # Crypto data has different column format - find the close and volume columns
-            close_col = [col for col in df.columns if 'close' in col.lower() and market in col][0]
-            volume_col = [col for col in df.columns if 'volume' in col.lower()][0]
+            st.info(f"Debug - Available columns: {list(df.columns)}")
+
+            # Find close column (may have market in parentheses or not)
+            close_cols = [col for col in df.columns if 'close' in col.lower()]
+            if close_cols:
+                close_col = close_cols[0]
+            else:
+                st.error(f"No close column found in {list(df.columns)}")
+                return None
+
+            # Find volume column
+            volume_cols = [col for col in df.columns if 'volume' in col.lower()]
+            if volume_cols:
+                volume_col = volume_cols[0]
+            else:
+                st.error(f"No volume column found in {list(df.columns)}")
+                return None
+
             df = df[[close_col, volume_col]].copy()
             df.columns = ['close', 'volume']
             df = df.astype(float)
@@ -331,8 +347,9 @@ def get_alphavantage_data(av_key, fred_key, target_asset, market_context, macro_
             except:
                 pass
 
-        # Filter by date range
-        df_market = df_market.loc[start_date:end_date]
+        # Don't filter by date range for Alpha Vantage since compact is limited to 100 days
+        # Just use whatever data we got
+        st.info(f"📊 Alpha Vantage returned {len(df_market)} days of data (compact mode = last ~100 days)")
 
         return df_market.dropna()
     except Exception as e:

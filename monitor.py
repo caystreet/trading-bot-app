@@ -110,7 +110,7 @@ def build_lab_features(df, target, indicator_config):
     return df.dropna()
 
 # Alpha Vantage Helper Functions
-def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
+def fetch_alphavantage_daily(symbol, api_key, outputsize='compact'):
     """Fetch daily price data from Alpha Vantage"""
     # Check if it's a crypto symbol
     crypto_pairs = ['BTCUSD', 'ETHUSD', 'SOLUSD', 'BTC', 'ETH', 'SOL']
@@ -147,8 +147,24 @@ def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
             df = pd.DataFrame.from_dict(data['Time Series (Digital Currency Daily)'], orient='index')
             df.index = pd.to_datetime(df.index)
             # Crypto data has different column format - find the close and volume columns
-            close_col = [col for col in df.columns if 'close' in col.lower() and market in col][0]
-            volume_col = [col for col in df.columns if 'volume' in col.lower()][0]
+            st.info(f"Debug - Available columns: {list(df.columns)}")
+
+            # Find close column (may have market in parentheses or not)
+            close_cols = [col for col in df.columns if 'close' in col.lower()]
+            if close_cols:
+                close_col = close_cols[0]
+            else:
+                st.error(f"No close column found in {list(df.columns)}")
+                return None
+
+            # Find volume column
+            volume_cols = [col for col in df.columns if 'volume' in col.lower()]
+            if volume_cols:
+                volume_col = volume_cols[0]
+            else:
+                st.error(f"No volume column found in {list(df.columns)}")
+                return None
+
             df = df[[close_col, volume_col]].copy()
             df.columns = ['close', 'volume']
             df = df.astype(float)
