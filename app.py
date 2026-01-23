@@ -193,6 +193,14 @@ def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
         response = requests.get(url)
         data = response.json()
 
+        # Check for API errors
+        if 'Error Message' in data:
+            st.error(f"Alpha Vantage Error for {symbol}: {data['Error Message']}")
+            return None
+        if 'Note' in data:
+            st.warning(f"Alpha Vantage Note for {symbol}: {data['Note']}")
+            return None
+
         if 'Time Series (Digital Currency Daily)' in data:
             df = pd.DataFrame.from_dict(data['Time Series (Digital Currency Daily)'], orient='index')
             df.index = pd.to_datetime(df.index)
@@ -202,6 +210,9 @@ def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
             df = df.astype(float)
             df = df.sort_index()
             return df
+        else:
+            st.error(f"Unexpected response for {symbol}: {list(data.keys())}")
+            return None
     else:
         # For stocks, use TIME_SERIES_DAILY
         url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize={outputsize}&apikey={api_key}'
