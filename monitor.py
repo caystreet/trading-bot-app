@@ -331,7 +331,10 @@ def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, ma
             except:
                 pass
 
-        return df_market.dropna()
+        st.write(f"Debug: Before dropna: {len(df_market)} rows")
+        result = df_market.dropna(subset=[target_asset])
+        st.write(f"Debug: After dropna(subset=[target_asset]): {len(result)} rows")
+        return result
 
     except Exception as e:
         st.error(f"Data fetch error: {str(e)}")
