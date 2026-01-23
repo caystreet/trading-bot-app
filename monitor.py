@@ -129,20 +129,39 @@ def fetch_alphavantage_daily(symbol, api_key, outputsize='full'):
         response = requests.get(url)
         data = response.json()
 
+        # Debug: Show what we got from API
+        st.info(f"Debug - API Response Keys for {symbol}: {list(data.keys())}")
+
+        # Check for API errors
+        if 'Error Message' in data:
+            st.error(f"Alpha Vantage Error for {symbol}: {data['Error Message']}")
+            return None
+        if 'Note' in data:
+            st.warning(f"Alpha Vantage Note for {symbol}: {data['Note']}")
+            return None
+
         if 'Time Series (Digital Currency Daily)' in data:
             df = pd.DataFrame.from_dict(data['Time Series (Digital Currency Daily)'], orient='index')
             df.index = pd.to_datetime(df.index)
-            # Crypto data has different column format
-            df = df[[f'4a. close ({market})', f'5. volume']].copy()
+            # Crypto data has different column format - find the close and volume columns
+            close_col = [col for col in df.columns if 'close' in col.lower() and market in col][0]
+            volume_col = [col for col in df.columns if 'volume' in col.lower()][0]
+            df = df[[close_col, volume_col]].copy()
             df.columns = ['close', 'volume']
             df = df.astype(float)
             df = df.sort_index()
             return df
+        else:
+            st.error(f"Unexpected response for {symbol}: {list(data.keys())}")
+            return None
     else:
         # For stocks, use TIME_SERIES_DAILY
         url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize={outputsize}&apikey={api_key}'
         response = requests.get(url)
         data = response.json()
+
+        # Debug: Show what we got from API
+        st.info(f"Debug - API Response Keys for {symbol}: {list(data.keys())}")
 
         if 'Time Series (Daily)' in data:
             df = pd.DataFrame.from_dict(data['Time Series (Daily)'], orient='index')
