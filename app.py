@@ -102,7 +102,7 @@ with st.sidebar.expander("📊 Trading Parameters", expanded=True):
     with col1:
         start_date = st.date_input(
             "Start Date",
-            value=pd.to_datetime("2018-01-01"),
+            value=pd.to_datetime("today") - pd.Timedelta(days=800),
             min_value=pd.to_datetime("2015-01-01"),
             max_value=pd.to_datetime("today")
         )
@@ -398,7 +398,10 @@ def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, ma
             if col in df_combined.columns:
                 df_combined[col] = df_combined[col].fillna(0)
 
-        return df_combined.dropna(subset=[target_asset])
+        st.info(f"📊 Tiingo returned {len(df_combined)} days of data before dropna")
+        result = df_combined.dropna(subset=[target_asset])
+        st.info(f"📊 After dropna: {len(result)} days of data")
+        return result
     except Exception as e:
         st.error(f"Error fetching data: {str(e)}")
         return None
