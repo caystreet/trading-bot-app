@@ -107,7 +107,19 @@ def build_lab_features(df, target, indicator_config):
             volume_avg = df[volume_col].rolling(window=20).mean()
             df['Volume_Ratio'] = df[volume_col] / volume_avg
 
-    return df.dropna()
+    # Fill remaining NaNs in macro/market columns (from forward/backward fill gaps)
+    # Only drop rows where the target asset or indicator columns are NaN
+    st.write(f"Debug: Before dropna in build_lab_features: {len(df)} rows, NaN counts: {df.isna().sum().to_dict()}")
+
+    # Fill any remaining macro NaNs with 0 (these are typically at edges of date range)
+    macro_cols = [col for col in df.columns if col not in [target, volume_col] and not any(x in col for x in ['SMA', 'Mom', 'Smooth', 'Volume'])]
+    for col in macro_cols:
+        if col in df.columns:
+            df[col] = df[col].fillna(0)
+
+    result = df.dropna()
+    st.write(f"Debug: After dropna in build_lab_features: {len(result)} rows")
+    return result
 
 # Alpha Vantage Helper Functions
 def fetch_alphavantage_daily(symbol, api_key, outputsize='compact'):
