@@ -626,8 +626,14 @@ if st.session_state.get('run_analysis_clicked', False):
                 )
 
         if raw_data is not None:
+            st.info(f"📊 Raw data has {len(raw_data)} rows")
             with st.spinner("Building features..."):
                 processed_data = build_lab_features(raw_data.copy(), target_asset, indicator_config)
+                st.info(f"📊 After building features and dropna: {len(processed_data)} rows")
+
+                if len(processed_data) == 0:
+                    st.error(f"❌ Insufficient data after applying indicators. Need at least 250+ days of raw data for indicators like SMA_200 and 40-day forward-looking signal.")
+                    st.stop()
 
                 X = processed_data.drop(columns=['Signal'])
                 y = processed_data['Signal']
