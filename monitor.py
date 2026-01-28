@@ -290,8 +290,10 @@ def get_alphavantage_data(av_key, fred_key, target_asset, market_context, macro_
         df_market = df_target[['close', 'volume']].copy()
         df_market.columns = [target_asset, f"{target_asset}_volume"]
 
-        # Fetch market context assets
+        # Fetch market context assets (skip if same as target to avoid duplicates)
         for asset in market_context:
+            if asset == target_asset:
+                continue  # Skip duplicate of target asset
             df_context = fetch_alphavantage_daily(asset, av_key)
             if df_context is not None:
                 df_market = df_market.join(df_context[['close']].rename(columns={'close': asset}), how='outer')
@@ -353,8 +355,9 @@ def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, ma
         client = TiingoClient({'api_key': tiingo_key})
         fred = Fred(api_key=fred_key)
 
-        # Fetch market data
-        all_market = [target_asset] + market_context
+        # Fetch market data - filter out target_asset from market_context to avoid duplicates
+        filtered_context = [asset for asset in market_context if asset != target_asset]
+        all_market = [target_asset] + filtered_context
         st.write(f"Debug: Fetching {all_market} from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         df_market = client.get_dataframe(
             all_market,

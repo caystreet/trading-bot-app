@@ -562,7 +562,9 @@ def get_cached_consolidated_data(tiingo_key: str, fred_key: str, target_asset: s
         client = TiingoClient({'api_key': tiingo_key})
         fred = Fred(api_key=fred_key)
 
-        all_market = [target_asset] + market_context
+        # Filter out target_asset from market_context to avoid duplicate columns
+        filtered_context = [asset for asset in market_context if asset != target_asset]
+        all_market = [target_asset] + filtered_context
         df_market = cached_tiingo_price(
             client, all_market, start_date, end_date,
             metric_name='close', force_refresh=force_refresh
@@ -651,6 +653,8 @@ def get_cached_alphavantage_data(av_key: str, fred_key: str, target_asset: str,
         df_market.columns = [target_asset, f"{target_asset}_volume"]
 
         for asset in market_context:
+            if asset == target_asset:
+                continue  # Skip duplicate of target asset
             df_context = cached_alphavantage_daily(
                 asset, av_key, force_refresh=force_refresh
             )
