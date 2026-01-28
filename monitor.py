@@ -151,16 +151,23 @@ def build_lab_features(df, target, indicator_config, trading_params=None):
             df['Volume_Ratio'] = df[volume_col] / volume_avg
 
     # Fill remaining NaNs in macro/market columns (from forward/backward fill gaps)
-    # Only drop rows where the target asset or indicator columns are NaN
-    st.write(f"Debug: Before dropna in build_lab_features: {len(df)} rows, NaN counts: {df.isna().sum().to_dict()}")
+    st.write(f"Debug: Before dropna in build_lab_features: {len(df)} rows")
 
-    # Fill any remaining macro NaNs with 0 (these are typically at edges of date range)
-    macro_cols = [col for col in df.columns if col not in [target, volume_col] and not any(x in col for x in ['SMA', 'Mom', 'Smooth', 'Volume'])]
-    for col in macro_cols:
-        if col in df.columns:
-            df[col] = df[col].fillna(0)
+    # Get list of indicator columns we created
+    indicator_cols = ['SMA_10', 'SMA_50', 'SMA_100', 'SMA_200', 'Mom_14', 'Mom_30', 'Mom_60',
+                      'Smoothed_10', 'Smoothed_30', 'Volume', 'Volume_SMA_20', 'Volume_Ratio']
+    indicator_cols = [col for col in indicator_cols if col in df.columns]
 
-    result = df.dropna()
+    # Fill NaN in other columns (macro/market data) with forward fill then 0
+    other_cols = [col for col in df.columns if col not in indicator_cols and col != target and col != volume_col]
+    for col in other_cols:
+        df[col] = df[col].ffill().bfill().fillna(0)
+
+    # Only drop rows where indicator columns or target have NaN
+    cols_to_check = [target] + indicator_cols
+    cols_to_check = [col for col in cols_to_check if col in df.columns]
+
+    result = df.dropna(subset=cols_to_check)
     st.write(f"Debug: After dropna in build_lab_features: {len(result)} rows")
     st.write(f"Debug: Using TP={take_profit_pct}%, Lookback={lookback_candles} candles")
     return result

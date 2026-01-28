@@ -519,7 +519,22 @@ def build_lab_features(df, target, indicator_config, take_profit_pct=8.5, lookba
     tp_multiplier = 1 + (take_profit_pct / 100)
     df['Signal'] = (df[target].shift(-lookback_candles) > df[target] * tp_multiplier).astype(int)
 
-    return df.dropna()
+    # Fill any remaining NaN in non-indicator columns (macro data, market context)
+    # Get list of indicator columns we created
+    indicator_cols = ['SMA_10', 'SMA_50', 'SMA_100', 'SMA_200', 'Mom_14', 'Mom_30', 'Mom_60',
+                      'Smoothed_10', 'Smoothed_30', 'Volume', 'Volume_SMA_20', 'Volume_Ratio', 'Signal']
+    indicator_cols = [col for col in indicator_cols if col in df.columns]
+
+    # Fill NaN in other columns (macro/market data) with forward fill then 0
+    other_cols = [col for col in df.columns if col not in indicator_cols and col != target]
+    for col in other_cols:
+        df[col] = df[col].ffill().bfill().fillna(0)
+
+    # Only drop rows where indicator columns or target have NaN
+    cols_to_check = [target] + indicator_cols
+    cols_to_check = [col for col in cols_to_check if col in df.columns]
+
+    return df.dropna(subset=cols_to_check)
 
 def calculate_metrics(results_series):
     """Calculate trading metrics"""
