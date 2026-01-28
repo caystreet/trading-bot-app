@@ -344,6 +344,7 @@ def cached_tiingo_price(client, symbols: list, start_date, end_date,
     Fetch price data from Tiingo with caching.
     """
     import streamlit as st
+    import requests
 
     cache_key = generate_cache_key(
         'tiingo_price',
@@ -360,12 +361,59 @@ def cached_tiingo_price(client, symbols: list, start_date, end_date,
             return cached
 
     st.info(f"🌐 Fetching fresh Tiingo data for {symbols}...")
-    df = client.get_dataframe(
-        symbols,
-        metric_name=metric_name,
-        startDate=start_date.strftime('%Y-%m-%d') if hasattr(start_date, 'strftime') else start_date,
-        endDate=end_date.strftime('%Y-%m-%d') if hasattr(end_date, 'strftime') else end_date
-    )
+
+    start_str = start_date.strftime('%Y-%m-%d') if hasattr(start_date, 'strftime') else str(start_date)
+    end_str = end_date.strftime('%Y-%m-%d') if hasattr(end_date, 'strftime') else str(end_date)
+
+    try:
+        # Try the standard get_dataframe method first
+        df = client.get_dataframe(
+            symbols,
+            metric_name=metric_name,
+            startDate=start_str,
+            endDate=end_str
+        )
+    except KeyError as e:
+        # Fallback: fetch data using REST API directly
+        st.warning(f"⚠️ Tiingo client error, using REST API fallback...")
+        api_key = client._api_key
+
+        all_data = {}
+        for symbol in symbols:
+            try:
+                # Check if it's crypto
+                if symbol.upper() in ['BTCUSD', 'ETHUSD', 'SOLUSD']:
+                    base = symbol.upper().replace('USD', '').lower()
+                    url = f"https://api.tiingo.com/tiingo/crypto/prices?tickers={base}usd&startDate={start_str}&endDate={end_str}&resampleFreq=1day"
+                else:
+                    url = f"https://api.tiingo.com/tiingo/daily/{symbol}/prices?startDate={start_str}&endDate={end_str}"
+
+                headers = {'Content-Type': 'application/json', 'Authorization': f'Token {api_key}'}
+                response = requests.get(url, headers=headers)
+                data = response.json()
+
+                if isinstance(data, list) and len(data) > 0:
+                    # Handle crypto response format (nested in priceData)
+                    if 'priceData' in data[0]:
+                        price_data = data[0]['priceData']
+                        symbol_df = pd.DataFrame(price_data)
+                        symbol_df['date'] = pd.to_datetime(symbol_df['date'])
+                        symbol_df = symbol_df.set_index('date')
+                        all_data[symbol] = symbol_df[metric_name] if metric_name in symbol_df.columns else symbol_df['close']
+                    else:
+                        # Regular stock format
+                        symbol_df = pd.DataFrame(data)
+                        symbol_df['date'] = pd.to_datetime(symbol_df['date'])
+                        symbol_df = symbol_df.set_index('date')
+                        all_data[symbol] = symbol_df[metric_name] if metric_name in symbol_df.columns else symbol_df['close']
+            except Exception as fetch_err:
+                st.warning(f"Failed to fetch {symbol}: {fetch_err}")
+                continue
+
+        if all_data:
+            df = pd.DataFrame(all_data)
+        else:
+            raise ValueError(f"Failed to fetch data for any symbols: {symbols}")
 
     set_cached_data(
         cache_key, df, 'price_data',
