@@ -1,8 +1,8 @@
-streamlit
-pandas
-numpy
-tiingo
-fredapi
-scikit-learn
-matplotlib
-requests
+streamlit>=1.24.0
+pandas>=2.0.0
+numpy>=1.24.0
+tiingo>=0.14.0
+fredapi>=0.5.0
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
+requests>=2.31.0
