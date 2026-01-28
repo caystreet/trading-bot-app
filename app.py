@@ -1247,12 +1247,18 @@ with col1:
 with col2:
     uploaded_file = st.file_uploader("Import", type=['pkl'], label_visibility="collapsed", key="bot_import")
     if uploaded_file is not None:
-        success, result = import_bots(uploaded_file)
-        if success:
-            st.success(f"✅ Loaded {result} bot(s)")
-            st.rerun()
+        # Track which file we've already processed to prevent infinite rerun loop
+        file_id = f"{uploaded_file.name}_{uploaded_file.size}"
+        if st.session_state.get('last_imported_file') != file_id:
+            success, result = import_bots(uploaded_file)
+            if success:
+                st.session_state.last_imported_file = file_id
+                st.success(f"✅ Loaded {result} bot(s)")
+                st.rerun()
+            else:
+                st.error(f"❌ Import failed: {result}")
         else:
-            st.error(f"❌ Import failed: {result}")
+            st.info(f"✅ Bots already loaded")
 
 # Footer
 st.sidebar.markdown("---")
