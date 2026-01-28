@@ -657,7 +657,25 @@ def get_live_prediction(model, df, target, indicator_config):
             volume_avg = df[volume_col].rolling(window=20).mean()
             df['Volume_Ratio'] = df[volume_col] / volume_avg
 
-    df_features = df.dropna()
+    # Get list of indicator columns we created
+    indicator_cols = ['SMA_10', 'SMA_50', 'SMA_100', 'SMA_200', 'Mom_14', 'Mom_30', 'Mom_60',
+                      'Smoothed_10', 'Smoothed_30', 'Volume', 'Volume_SMA_20', 'Volume_Ratio']
+    indicator_cols = [col for col in indicator_cols if col in df.columns]
+
+    # Fill NaN in other columns (macro/market data) with forward fill then 0
+    other_cols = [col for col in df.columns if col not in indicator_cols and col != target]
+    for col in other_cols:
+        df[col] = df[col].ffill().bfill().fillna(0)
+
+    # Only drop rows where indicator columns or target have NaN
+    cols_to_check = [target] + indicator_cols
+    cols_to_check = [col for col in cols_to_check if col in df.columns]
+
+    df_features = df.dropna(subset=cols_to_check)
+
+    if len(df_features) == 0:
+        raise ValueError("No valid data after applying indicators")
+
     last_row = df_features.iloc[[-1]]
 
     current_price = last_row[target].values[0]
