@@ -8,6 +8,15 @@ import warnings
 import requests
 warnings.filterwarnings('ignore')
 
+# Import the persistent caching module
+from data_cache import (
+    get_cached_consolidated_data,
+    get_cached_alphavantage_data,
+    get_cache_stats,
+    clear_expired_cache,
+    clear_all_cache
+)
+
 # Page configuration
 st.set_page_config(
     page_title="Bot Monitor",
@@ -51,6 +60,27 @@ with st.sidebar.expander("🔑 API Keys", expanded=True):
         type="password"
     )
 
+# Cache Management
+with st.sidebar.expander("💾 Cache Settings", expanded=False):
+    force_refresh = st.checkbox("Force refresh data", value=False,
+                                help="Bypass cache and fetch fresh data from APIs")
+
+    try:
+        cache_stats = get_cache_stats()
+        st.caption(f"📦 Cache: {cache_stats['valid_entries']} entries ({cache_stats['cache_size_mb']} MB)")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🧹 Clear Expired", use_container_width=True):
+                deleted = clear_expired_cache()
+                st.success(f"Cleared {deleted} expired entries")
+        with col2:
+            if st.button("🗑️ Clear All", use_container_width=True):
+                deleted = clear_all_cache()
+                st.success(f"Cleared {deleted} entries")
+    except Exception as e:
+        st.caption(f"Cache not initialized: {e}")
+
 # Import bots section
 st.sidebar.markdown("---")
 st.sidebar.header("📥 Import Bots")
@@ -70,8 +100,21 @@ if uploaded_file is not None:
         st.sidebar.error(f"Import failed: {str(e)}")
 
 # Helper functions
-def build_lab_features(df, target, indicator_config):
-    """Build features for prediction"""
+def build_lab_features(df, target, indicator_config, trading_params=None):
+    """Build features for prediction
+
+    Args:
+        df: DataFrame with price data
+        target: Target asset column name
+        indicator_config: Dict of indicator settings
+        trading_params: Dict with take_profit_pct, stop_loss_pct, lookback_candles (optional)
+    """
+    # Get trading params with defaults
+    if trading_params is None:
+        trading_params = {}
+    take_profit_pct = trading_params.get('take_profit_pct', 8.5)
+    lookback_candles = trading_params.get('lookback_candles', 40)
+
     # Simple Moving Averages
     if indicator_config.get('use_sma_10'):
         df['SMA_10'] = df[target].rolling(window=10).mean()
@@ -119,6 +162,7 @@ def build_lab_features(df, target, indicator_config):
 
     result = df.dropna()
     st.write(f"Debug: After dropna in build_lab_features: {len(result)} rows")
+    st.write(f"Debug: Using TP={take_profit_pct}%, Lookback={lookback_candles} candles")
     return result
 
 # Alpha Vantage Helper Functions
@@ -410,31 +454,42 @@ else:
                             # Get AV indicators config from bot if it exists
                             av_indicators = bot['config'].get('av_indicators', {})
 
-                            # Use appropriate data source
+                            # Use appropriate data source with caching
                             if data_source == "Alpha Vantage" and alphavantage_key:
-                                scan_data = get_alphavantage_data(
+                                scan_data = get_cached_alphavantage_data(
                                     alphavantage_key,
                                     fred_key,
                                     bot['config']['target_asset'],
-                                    bot['config']['market_context'],
-                                    bot['config']['macro_context'],
+                                    list(bot['config']['market_context']),
+                                    list(bot['config']['macro_context']),
                                     datetime.now() - timedelta(days=800),
                                     datetime.now(),
-                                    av_indicators
+                                    av_indicators,
+                                    force_refresh=force_refresh
                                 )
                             else:
-                                scan_data = get_consolidated_data(
+                                scan_data = get_cached_consolidated_data(
                                     tiingo_key,
                                     fred_key,
                                     bot['config']['target_asset'],
-                                    bot['config']['market_context'],
-                                    bot['config']['macro_context'],
+                                    list(bot['config']['market_context']),
+                                    list(bot['config']['macro_context']),
                                     datetime.now() - timedelta(days=800),
-                                    datetime.now()
+                                    datetime.now(),
+                                    force_refresh=force_refresh
                                 )
 
                             if scan_data is not None:
-                                scan_df = build_lab_features(scan_data, bot['config']['target_asset'], bot['config']['indicators'])
+                                # Get trading params from bot config (with defaults for older bots)
+                                trading_params = bot['config'].get('trading_params', {
+                                    'take_profit_pct': 8.5,
+                                    'stop_loss_pct': 3.0,
+                                    'lookback_candles': 40
+                                })
+                                scan_df = build_lab_features(
+                                    scan_data, bot['config']['target_asset'],
+                                    bot['config']['indicators'], trading_params
+                                )
 
                                 if len(scan_df) > 0:
                                     # Get all columns for features (model was trained with all columns including target price)
@@ -463,7 +518,12 @@ else:
 
     # Individual bot cards
     for idx, bot in enumerate(st.session_state.monitor_bots):
-        with st.expander(f"🤖 {bot['name']} ({bot['config']['target_asset']}) - {bot['model_type']}", expanded=False):
+        # Get trading params for display
+        trading_params = bot['config'].get('trading_params', {'take_profit_pct': 8.5, 'stop_loss_pct': 3.0, 'lookback_candles': 40})
+        tp_display = trading_params.get('take_profit_pct', 8.5)
+        sl_display = trading_params.get('stop_loss_pct', 3.0)
+
+        with st.expander(f"🤖 {bot['name']} ({bot['config']['target_asset']}) - TP:{tp_display}% SL:{sl_display}%", expanded=False):
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
@@ -473,6 +533,7 @@ else:
             with col2:
                 st.write(f"**Last Scan:** {bot['last_scan'] or 'Never'}")
                 st.write(f"**Last Signal:** {bot['last_signal'] or 'None'}")
+                st.write(f"**TP/SL:** {tp_display}% / {sl_display}%")
 
             with col3:
                 # Individual scan button
@@ -486,33 +547,45 @@ else:
                             # Get AV indicators config from bot if it exists
                             av_indicators = bot['config'].get('av_indicators', {})
 
-                            # Use appropriate data source
+                            # Use appropriate data source with caching
                             if data_source == "Alpha Vantage" and alphavantage_key:
-                                scan_data = get_alphavantage_data(
+                                scan_data = get_cached_alphavantage_data(
                                     alphavantage_key,
                                     fred_key,
                                     bot['config']['target_asset'],
-                                    bot['config']['market_context'],
-                                    bot['config']['macro_context'],
+                                    list(bot['config']['market_context']),
+                                    list(bot['config']['macro_context']),
                                     start_dt,
                                     end_dt,
-                                    av_indicators
+                                    av_indicators,
+                                    force_refresh=force_refresh
                                 )
                             else:
-                                scan_data = get_consolidated_data(
+                                scan_data = get_cached_consolidated_data(
                                     tiingo_key,
                                     fred_key,
                                     bot['config']['target_asset'],
-                                    bot['config']['market_context'],
-                                    bot['config']['macro_context'],
+                                    list(bot['config']['market_context']),
+                                    list(bot['config']['macro_context']),
                                     start_dt,
-                                    end_dt
+                                    end_dt,
+                                    force_refresh=force_refresh
                                 )
 
                             if scan_data is not None:
                                 st.write(f"Debug: Fetched {len(scan_data)} rows of raw data")
                                 st.write(f"Debug: Indicator config: {bot['config']['indicators']}")
-                                scan_df = build_lab_features(scan_data, bot['config']['target_asset'], bot['config']['indicators'])
+                                # Get trading params from bot config (with defaults for older bots)
+                                trading_params = bot['config'].get('trading_params', {
+                                    'take_profit_pct': 8.5,
+                                    'stop_loss_pct': 3.0,
+                                    'lookback_candles': 40
+                                })
+                                st.write(f"Debug: Trading params: TP={trading_params.get('take_profit_pct')}%, SL={trading_params.get('stop_loss_pct')}%, Lookback={trading_params.get('lookback_candles')}")
+                                scan_df = build_lab_features(
+                                    scan_data, bot['config']['target_asset'],
+                                    bot['config']['indicators'], trading_params
+                                )
                                 st.write(f"Debug: After features {len(scan_df)} rows, Columns: {list(scan_df.columns)}")
 
                                 if len(scan_df) > 0:

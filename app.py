@@ -14,6 +14,15 @@ import os
 import requests
 warnings.filterwarnings('ignore')
 
+# Import the persistent caching module
+from data_cache import (
+    get_cached_consolidated_data,
+    get_cached_alphavantage_data,
+    get_cache_stats,
+    clear_expired_cache,
+    clear_all_cache
+)
+
 # Page configuration
 st.set_page_config(
     page_title="Crypto Trading Bot Tester",
@@ -89,12 +98,63 @@ with st.sidebar.expander("🔑 API Keys", expanded=True):
         type="password"
     )
 
+# Cache Management
+with st.sidebar.expander("💾 Cache Settings", expanded=False):
+    force_refresh = st.checkbox("Force refresh data", value=False,
+                                help="Bypass cache and fetch fresh data from APIs")
+
+    try:
+        cache_stats = get_cache_stats()
+        st.caption(f"📦 Cache: {cache_stats['valid_entries']} entries ({cache_stats['cache_size_mb']} MB)")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🧹 Clear Expired", use_container_width=True):
+                deleted = clear_expired_cache()
+                st.success(f"Cleared {deleted} expired entries")
+        with col2:
+            if st.button("🗑️ Clear All", use_container_width=True):
+                deleted = clear_all_cache()
+                st.success(f"Cleared {deleted} entries")
+    except Exception as e:
+        st.caption(f"Cache not initialized: {e}")
+
 # Trading Parameters
 with st.sidebar.expander("📊 Trading Parameters", expanded=True):
     target_asset = st.selectbox(
         "Target Asset",
         ["BTCUSD", "ETHUSD", "SOLUSD", "SPY", "GLD", "QQQ", "IWM"],
         index=0
+    )
+
+    st.markdown("**Take Profit / Stop Loss**")
+    col_tp, col_sl = st.columns(2)
+    with col_tp:
+        take_profit_pct = st.number_input(
+            "Take Profit %",
+            min_value=1.0,
+            max_value=50.0,
+            value=8.5,
+            step=0.5,
+            help="Target profit percentage to exit trade"
+        )
+    with col_sl:
+        stop_loss_pct = st.number_input(
+            "Stop Loss %",
+            min_value=1.0,
+            max_value=20.0,
+            value=3.0,
+            step=0.5,
+            help="Maximum loss percentage before exiting"
+        )
+
+    lookback_candles = st.slider(
+        "Look-ahead Window (candles)",
+        min_value=10,
+        max_value=100,
+        value=40,
+        step=5,
+        help="Number of candles to look ahead for TP/SL"
     )
 
     st.markdown("**Date Range**")
@@ -406,8 +466,16 @@ def get_consolidated_data(tiingo_key, fred_key, target_asset, market_context, ma
         st.error(f"Error fetching data: {str(e)}")
         return None
 
-def build_lab_features(df, target, indicator_config):
-    """Build features and labels for training"""
+def build_lab_features(df, target, indicator_config, take_profit_pct=8.5, lookback_candles=40):
+    """Build features and labels for training
+
+    Args:
+        df: DataFrame with price data
+        target: Target asset column name
+        indicator_config: Dict of indicator settings
+        take_profit_pct: Take profit percentage (default 8.5%)
+        lookback_candles: Number of candles to look ahead (default 40)
+    """
     # Simple Moving Averages
     if indicator_config.get('use_sma_10'):
         df['SMA_10'] = df[target].rolling(window=10).mean()
@@ -443,8 +511,9 @@ def build_lab_features(df, target, indicator_config):
             volume_avg = df[volume_col].rolling(window=20).mean()
             df['Volume_Ratio'] = df[volume_col] / volume_avg
 
-    # Define Label: 1 if 8.5% TP hit within 40 candles
-    df['Signal'] = (df[target].shift(-40) > df[target] * 1.085).astype(int)
+    # Define Label: 1 if TP% hit within lookback candles
+    tp_multiplier = 1 + (take_profit_pct / 100)
+    df['Signal'] = (df[target].shift(-lookback_candles) > df[target] * tp_multiplier).astype(int)
 
     return df.dropna()
 
@@ -457,23 +526,36 @@ def calculate_metrics(results_series):
     win_rate = round((results_series == 'TP').mean() * 100, 2)
     return {"total": total_signals, "win_rate": win_rate}
 
-def run_backtest(df, preds, target):
-    """Run backtest and return results"""
+def run_backtest(df, preds, target, take_profit_pct=8.5, stop_loss_pct=3.0, lookback_candles=40):
+    """Run backtest and return results
+
+    Args:
+        df: DataFrame with price data
+        preds: Model predictions
+        target: Target asset column name
+        take_profit_pct: Take profit percentage (default 8.5%)
+        stop_loss_pct: Stop loss percentage (default 3.0%)
+        lookback_candles: Number of candles to look ahead (default 40)
+    """
     signals_indices = df.index[preds == 1]
     trades = []
     trades_index = []
 
+    # Calculate multipliers from percentages
+    tp_multiplier = 1 + (take_profit_pct / 100)
+    sl_multiplier = 1 - (stop_loss_pct / 100)
+
     for idx in signals_indices:
         entry = df.loc[idx, target]
-        window = df.loc[idx:].iloc[1:41][target]
+        window = df.loc[idx:].iloc[1:lookback_candles+1][target]
         result = 'Expired'
 
         if not window.empty:
             for price in window:
-                if price <= entry * 0.97:  # 3% Stop Loss
+                if price <= entry * sl_multiplier:  # Stop Loss
                     result = 'SL'
                     break
-                elif price >= entry * 1.085:  # 8.5% Take Profit
+                elif price >= entry * tp_multiplier:  # Take Profit
                     result = 'TP'
                     break
 
@@ -615,20 +697,25 @@ if st.session_state.get('run_analysis_clicked', False):
 
         with st.spinner("Fetching data..."):
             if data_source == "Alpha Vantage":
-                raw_data = get_alphavantage_data(
+                raw_data = get_cached_alphavantage_data(
                     alphavantage_key, fred_key, target_asset,
-                    market_context, macro_context, start_date, end_date, av_indicators_config
+                    list(market_context), list(macro_context), start_date, end_date,
+                    av_indicators_config, force_refresh=force_refresh
                 )
             else:
-                raw_data = get_consolidated_data(
+                raw_data = get_cached_consolidated_data(
                     tiingo_key, fred_key, target_asset,
-                    market_context, macro_context, start_date, end_date
+                    list(market_context), list(macro_context), start_date, end_date,
+                    force_refresh=force_refresh
                 )
 
         if raw_data is not None:
             st.info(f"📊 Raw data has {len(raw_data)} rows")
             with st.spinner("Building features..."):
-                processed_data = build_lab_features(raw_data.copy(), target_asset, indicator_config)
+                processed_data = build_lab_features(
+                    raw_data.copy(), target_asset, indicator_config,
+                    take_profit_pct=take_profit_pct, lookback_candles=lookback_candles
+                )
                 st.info(f"📊 After building features and dropna: {len(processed_data)} rows")
 
                 if len(processed_data) == 0:
@@ -702,7 +789,11 @@ if st.session_state.get('run_analysis_clicked', False):
                 # Run backtests
                 if use_rf:
                     with st.spinner("Running Random Forest backtest..."):
-                        rf_results = run_backtest(processed_data, rf_model.predict(X), target_asset)
+                        rf_results = run_backtest(
+                            processed_data, rf_model.predict(X), target_asset,
+                            take_profit_pct=take_profit_pct, stop_loss_pct=stop_loss_pct,
+                            lookback_candles=lookback_candles
+                        )
                         # Store in session state
                         st.session_state.rf_results = rf_results
 
@@ -733,7 +824,11 @@ if st.session_state.get('run_analysis_clicked', False):
 
                 if use_knn:
                     with st.spinner("Running KNN backtest..."):
-                        knn_results = run_backtest(processed_data, knn_model.predict(X), target_asset)
+                        knn_results = run_backtest(
+                            processed_data, knn_model.predict(X), target_asset,
+                            take_profit_pct=take_profit_pct, stop_loss_pct=stop_loss_pct,
+                            lookback_candles=lookback_candles
+                        )
 
                     st.subheader("🔵 K-Nearest Neighbors Backtest")
 
@@ -814,6 +909,11 @@ if st.session_state.get('run_analysis_clicked', False):
                                 "n_estimators": n_estimators if use_rf else None,
                                 "max_depth": max_depth if use_rf else None,
                                 "n_neighbors": n_neighbors if use_knn else None
+                            },
+                            "trading_params": {
+                                "take_profit_pct": take_profit_pct,
+                                "stop_loss_pct": stop_loss_pct,
+                                "lookback_candles": lookback_candles
                             },
                             "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         }
@@ -969,15 +1069,16 @@ if st.session_state.get('run_analysis_clicked', False):
 
                                     with st.spinner(f"Scanning {bot['name']}..."):
                                         try:
-                                            # Get fresh data for scanning
-                                            scan_data = get_consolidated_data(
+                                            # Get data for scanning (uses cache, only fetches if needed)
+                                            scan_data = get_cached_consolidated_data(
                                                 tiingo_key,
                                                 fred_key,
                                                 bot['config']['target_asset'],
-                                                bot['config']['market_context'],
-                                                bot['config']['macro_context'],
+                                                list(bot['config']['market_context']),
+                                                list(bot['config']['macro_context']),
                                                 datetime.now() - timedelta(days=365),  # Last year of data
-                                                datetime.now()
+                                                datetime.now(),
+                                                force_refresh=False  # Use cache for scans
                                             )
 
                                             # Build features using bot's indicator config
