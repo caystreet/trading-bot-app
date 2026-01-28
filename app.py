@@ -53,13 +53,30 @@ def export_all_bots():
     }
     return pickle.dumps(export_data)
 
-def import_bots(uploaded_file):
-    """Import bots from uploaded file"""
+def import_bots(uploaded_file, merge=True):
+    """Import bots from uploaded file
+
+    Args:
+        uploaded_file: The uploaded pickle file
+        merge: If True, merge with existing bots. If False, replace all.
+    """
     try:
         import_data = pickle.loads(uploaded_file.read())
-        st.session_state.deployed_bots = import_data.get('bots', [])
-        st.session_state.bot_alerts = import_data.get('alerts', [])
-        return True, len(import_data.get('bots', []))
+        imported_bots = import_data.get('bots', [])
+        imported_alerts = import_data.get('alerts', [])
+
+        if merge and st.session_state.deployed_bots:
+            # Merge: add imported bots that don't already exist (by name)
+            existing_names = {bot['name'] for bot in st.session_state.deployed_bots}
+            new_bots = [bot for bot in imported_bots if bot['name'] not in existing_names]
+            st.session_state.deployed_bots.extend(new_bots)
+            st.session_state.bot_alerts.extend(imported_alerts)
+            return True, len(new_bots)
+        else:
+            # Replace all
+            st.session_state.deployed_bots = imported_bots
+            st.session_state.bot_alerts = imported_alerts
+            return True, len(imported_bots)
     except Exception as e:
         return False, str(e)
 
@@ -976,7 +993,7 @@ if st.session_state.get('run_analysis_clicked', False):
                             col_rf, col_knn = st.columns(2)
 
                             with col_rf:
-                                if st.button("🌲 Deploy RF", use_container_width=True):
+                                if st.button("🌲 Deploy RF", key="deploy_rf_dual", use_container_width=True):
                                     deployed_bot = {
                                         "name": f"{bot_name}_RF",
                                         "config": bot_config.copy(),
@@ -990,10 +1007,10 @@ if st.session_state.get('run_analysis_clicked', False):
                                     deployed_bot["config"]["model_type"] = "Random Forest"
                                     st.session_state.deployed_bots.append(deployed_bot)
                                     st.success(f"✅ RF Bot deployed! Total bots: {len(st.session_state.deployed_bots)}")
-                                    st.info("👉 Check sidebar for bot")
+                                    st.rerun()
 
                             with col_knn:
-                                if st.button("🔵 Deploy KNN", use_container_width=True):
+                                if st.button("🔵 Deploy KNN", key="deploy_knn_dual", use_container_width=True):
                                     deployed_bot = {
                                         "name": f"{bot_name}_KNN",
                                         "config": bot_config.copy(),
@@ -1007,11 +1024,11 @@ if st.session_state.get('run_analysis_clicked', False):
                                     deployed_bot["config"]["model_type"] = "KNN"
                                     st.session_state.deployed_bots.append(deployed_bot)
                                     st.success(f"✅ KNN Bot deployed! Total bots: {len(st.session_state.deployed_bots)}")
-                                    st.info("👉 Check sidebar for bot")
+                                    st.rerun()
 
                         # Single model deployment
                         elif use_rf and 'rf_model' in st.session_state:
-                            if st.button("🚀 Deploy RF Bot In-App", type="primary", use_container_width=True):
+                            if st.button("🚀 Deploy RF Bot In-App", key="deploy_rf_single", type="primary", use_container_width=True):
                                 deployed_bot = {
                                     "name": bot_name,
                                     "config": bot_config.copy(),
@@ -1024,10 +1041,10 @@ if st.session_state.get('run_analysis_clicked', False):
                                 }
                                 st.session_state.deployed_bots.append(deployed_bot)
                                 st.success(f"✅ Bot '{bot_name}' deployed! Total bots: {len(st.session_state.deployed_bots)}")
-                                st.info("👉 Check sidebar for bot")
+                                st.rerun()
 
                         elif use_knn and 'knn_model' in st.session_state:
-                            if st.button("🚀 Deploy KNN Bot In-App", type="primary", use_container_width=True):
+                            if st.button("🚀 Deploy KNN Bot In-App", key="deploy_knn_single", type="primary", use_container_width=True):
                                 deployed_bot = {
                                     "name": bot_name,
                                     "config": bot_config.copy(),
@@ -1040,7 +1057,7 @@ if st.session_state.get('run_analysis_clicked', False):
                                 }
                                 st.session_state.deployed_bots.append(deployed_bot)
                                 st.success(f"✅ Bot '{bot_name}' deployed! Total bots: {len(st.session_state.deployed_bots)}")
-                                st.info("👉 Check sidebar for bot")
+                                st.rerun()
 
                         else:
                             st.warning("⚠️ Please run analysis first to train models")
