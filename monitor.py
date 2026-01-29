@@ -100,6 +100,27 @@ if uploaded_file is not None:
         st.sidebar.error(f"Import failed: {str(e)}")
 
 # Helper functions
+def align_features_with_model(df, model):
+    """Align DataFrame columns with what the model expects.
+
+    If the model has feature_names_in_, ensure df has exactly those columns
+    in the same order. Missing columns are filled with 0.
+    """
+    if hasattr(model, 'feature_names_in_'):
+        expected_cols = list(model.feature_names_in_)
+        current_cols = list(df.columns)
+
+        # Add missing columns with 0
+        for col in expected_cols:
+            if col not in df.columns:
+                st.warning(f"⚠️ Missing feature '{col}' - filling with 0")
+                df[col] = 0
+
+        # Reorder to match expected order, only keep expected columns
+        df = df[expected_cols]
+
+    return df
+
 def build_lab_features(df, target, indicator_config, trading_params=None):
     """Build features for prediction
 
@@ -504,6 +525,10 @@ else:
                                 if len(scan_df) > 0:
                                     # Get all columns for features (model was trained with all columns including target price)
                                     X_latest = scan_df.iloc[-1:]
+
+                                    # Align features with what the model expects
+                                    X_latest = align_features_with_model(X_latest.copy(), bot['model'])
+
                                     prediction = bot['model'].predict(X_latest)[0]
                                     signal = "BUY" if prediction == 1 else "WAIT"
 
@@ -602,7 +627,11 @@ else:
                                     # Get all columns for features (model was trained with all columns including target price)
                                     st.write(f"Debug: Feature columns: {list(scan_df.columns)}")
                                     X_latest = scan_df.iloc[-1:]
-                                    st.write(f"Debug: X_latest shape: {X_latest.shape}")
+
+                                    # Align features with what the model expects
+                                    X_latest = align_features_with_model(X_latest.copy(), bot['model'])
+
+                                    st.write(f"Debug: X_latest shape after alignment: {X_latest.shape}")
                                     prediction = bot['model'].predict(X_latest)[0]
                                     signal = "BUY" if prediction == 1 else "WAIT"
 
